@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Famous Persons Quiz</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f172a;
+      --surface:   #1e293b;
+      --surface2:  #263348;
+      --border:    #334155;
+      --text:      #e2e8f0;
+      --muted:     #94a3b8;
+      --green:     #22c55e;
+      --green-dim: rgba(34,197,94,0.15);
+      --red:       #ef4444;
+      --red-dim:   rgba(239,68,68,0.15);
+      --accent:    #6366f1;
+      --radius:    12px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      overflow: hidden; }
+
+    #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .hidden { display: none !important; }
+
+    /* ── START SCREEN ── */
+    #start-screen {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 28px; text-align: center;
+    }
+    .globe { font-size: 72px; margin-bottom: 18px; animation: float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+
+    #start-screen h1 {
+      font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 800; margin-bottom: 10px;
+      background: linear-gradient(135deg, #e2e8f0 30%, #6366f1);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    #start-screen p { color: var(--muted); font-size: .95rem; max-width: 380px; margin-bottom: 28px; line-height: 1.55; }
+
+    .stats-row { display: flex; gap: 12px; margin-bottom: 32px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 20px; text-align: center; min-width: 80px; }
+    .stat-num  { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+    .stat-lbl  { font-size: .7rem; color: var(--muted); margin-top: 2px; }
+
+    .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
+      padding: 14px 48px; font-size: 1.05rem; font-weight: 700; cursor: pointer;
+      transition: background .15s, transform .12s; }
+    .btn-primary:hover  { background: #4f46e5; transform: translateY(-2px); }
+    .btn-primary:active { transform: translateY(0); }
+
+    /* category grid on start screen */
+    #cat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+      width: 100%;
+      max-width: 420px;
+      margin-bottom: 22px;
+    }
+    .cat-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: 3px solid;
+      border-radius: 9px;
+      padding: 10px 6px 8px;
+      font-size: .7rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+    }
+    .cat-card-icon { font-size: 1.4rem; line-height: 1; }
+    .cat-card-name { color: var(--text); font-size: .72rem; }
+    .cat-card-count { font-size: .68rem; color: var(--muted); }
+
+    /* ── QUIZ SCREEN ── */
+    #quiz-screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100vh; }
+
+    #quiz-header {
+      display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+      background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    #progress-text { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+    #progress-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    #progress-bar { height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s ease; width: 0%; }
+    #score-display { font-size: .85rem; font-weight: 700; white-space: nowrap; }
+
+    #map-wrapper { position: relative; flex: 1; min-height: 0; }
+    #map { width: 100%; height: 100%; }
+
+    #map-legend {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,23,42,.88); border: 1px solid var(--border); border-radius: 20px;
+      padding: 5px 14px; font-size: .78rem; display: flex; gap: 14px; z-index: 1000;
+      backdrop-filter: blur(4px); pointer-events: none;
+    }
+    .leg-item { display: flex; align-items: center; gap: 6px; }
+    .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .leg-dot.g { background: var(--green); }
+    .leg-dot.r { background: var(--red); }
+    .leg-dot.dual-legend { animation: dual-dot 4s ease-in-out infinite; }
+
+    /* bottom panel: swaps between question-panel and fact-card */
+    #bottom-panel {
+      background: var(--surface); border-top: 1px solid var(--border);
+      flex-shrink: 0; position: relative;
+    }
+    #question-panel, #fact-card {
+      padding: 10px 13px 12px;
+    }
+
+    #clue-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
+    .cat-badge { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem;
+      font-weight: 700; padding: 3px 10px; border-radius: 20px; border: 1px solid; }
+    .era-hint { font-size: .78rem; color: var(--muted); }
+
+    #options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .opt-btn {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 9px; padding: 9px 8px; font-size: .82rem; font-weight: 500;
+      cursor: pointer; transition: background .13s, border-color .13s, transform .09s;
+      text-align: left; line-height: 1.25; min-height: 48px;
+    }
+    .opt-btn:hover:not(:disabled) { background: #2d3f58; border-color: var(--accent); }
+    .opt-btn:active:not(:disabled) { transform: scale(.97); }
+    .opt-btn.correct  { background: var(--green-dim); border-color: var(--green); color: var(--green); font-weight: 700; }
+    .opt-btn.wrong    { background: var(--red-dim);   border-color: var(--red);   color: var(--red);   font-weight: 700; }
+    .opt-btn:disabled { cursor: default; }
+
+    /* fact card */
+    #result-line { font-size: .82rem; font-weight: 700; margin-bottom: 5px; }
+    #result-line.ok  { color: var(--green); }
+    #result-line.bad { color: var(--red); }
+    #fact-name { font-size: 1.05rem; font-weight: 800; margin-bottom: 3px; }
+    #fact-dates { font-size: .76rem; color: var(--muted); margin-bottom: 6px; line-height: 1.4; }
+    #fact-text {
+      font-size: .79rem; color: var(--text); line-height: 1.5;
+      padding: 7px 10px; background: var(--surface2); border-radius: 8px;
+      border-left: 3px solid var(--accent); margin-bottom: 9px;
+    }
+    #next-btn {
+      width: 100%; background: var(--accent); color: #fff; border: none;
+      border-radius: 9px; padding: 11px; font-size: .95rem; font-weight: 700;
+      cursor: pointer; transition: background .15s;
+    }
+    #next-btn:hover { background: #4f46e5; }
+
+    /* ── RESULTS SCREEN ── */
+    #results-screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+    #results-header { padding: 24px 20px 12px; text-align: center; flex-shrink: 0; }
+    #results-header h2 { font-size: 1.5rem; font-weight: 800; margin-bottom: 6px; }
+    #final-score { font-size: 3.2rem; font-weight: 900; color: var(--accent); }
+    #score-msg { color: var(--muted); font-size: .88rem; margin-top: 4px; }
+    #results-list { flex: 1; overflow-y: auto; padding: 0 14px 8px; }
+    .res-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 9px; margin-bottom: 7px;
+    }
+    .res-icon { font-size: 1rem; flex-shrink: 0; }
+    .res-name { font-size: .88rem; font-weight: 600; flex: 1; }
+    .res-cat  { font-size: .7rem; color: var(--muted); }
+    #results-footer { padding: 14px; flex-shrink: 0; }
+
+    /* ── MAP MARKERS ── */
+    .pulse-marker { position: relative; width: 14px; height: 14px; }
+    .p-dot { width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.85); position: absolute; }
+    .p-ring { width: 14px; height: 14px; border-radius: 50%; position: absolute; animation: pulse 2s ease-out infinite; }
+    .p-green { background: #22c55e; }
+    .p-green-ring { background: rgba(34,197,94,.55); }
+    .p-red { background: #ef4444; }
+    .p-red-ring { background: rgba(239,68,68,.55); }
+    @keyframes pulse { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(3.8);opacity:0} }
+
+    /* ── DUAL MARKER (born & died in same place) ── */
+    .dual-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2.5px solid rgba(255,255,255,.85); position: absolute;
+      animation: dual-dot 4s ease-in-out infinite;
+    }
+    .dual-ring {
+      width: 14px; height: 14px; border-radius: 50%; position: absolute;
+      animation: dual-ring 4s ease-in-out infinite;
+    }
+    @keyframes dual-dot {
+      0%, 47%  { background: #22c55e; }
+      50%, 97% { background: #ef4444; }
+      100%     { background: #22c55e; }
+    }
+    @keyframes dual-ring {
+      0%   { transform:scale(1);   opacity:.8; background:rgba(34,197,94,.55);  }
+      42%  { transform:scale(3.8); opacity:0;  background:rgba(34,197,94,.55);  }
+      43%  { transform:scale(1);   opacity:0;  background:rgba(239,68,68,.55); }
+      50%  { transform:scale(1);   opacity:.8; background:rgba(239,68,68,.55); }
+      92%  { transform:scale(3.8); opacity:0;  background:rgba(239,68,68,.55); }
+      93%  { transform:scale(1);   opacity:0;  background:rgba(34,197,94,.55);  }
+      100% { transform:scale(1);   opacity:.8; background:rgba(34,197,94,.55);  }
+    }
+
+    /* leaflet overrides */
+    .leaflet-control-zoom a { background: var(--surface); color: var(--text); border-color: var(--border); }
+    .leaflet-control-zoom a:hover { background: var(--surface2); }
+    .leaflet-popup-content-wrapper { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
+    .leaflet-popup-tip { background: var(--surface); }
+    .leaflet-popup-content { margin: 8px 12px; font-size: .8rem; line-height: 1.5; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== START SCREEN ===== -->
+  <div id="start-screen">
+    <div class="globe">🌍</div>
+    <h1>Famous Persons Quiz</h1>
+    <p>A <strong style="color:var(--green)">green dot</strong> marks where they were born.
+       A <strong style="color:var(--red)">red dot</strong> marks where they died.
+       Can you guess who it is?</p>
+
+    <div id="cat-grid"></div>
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num" id="stat-people">236</div><div class="stat-lbl">People</div></div>
+      <div class="stat-card"><div class="stat-num">6</div><div class="stat-lbl">Categories</div></div>
+      <div class="stat-card"><div class="stat-num">12</div><div class="stat-lbl">Questions</div></div>
+    </div>
+    <button class="btn-primary" id="start-btn">Start Quiz</button>
+  </div>
+
+  <!-- ===== QUIZ SCREEN ===== -->
+  <div id="quiz-screen" class="hidden">
+
+    <div id="quiz-header">
+      <span id="progress-text">1 / 12</span>
+      <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+      <span id="score-display">Score: 0</span>
+    </div>
+
+    <div id="map-wrapper">
+      <div id="map"></div>
+      <div id="map-legend">
+        <div class="leg-item"><div class="leg-dot g"></div><span>Birthplace</span></div>
+        <div class="leg-item"><div class="leg-dot r"></div><span>Death place</span></div>
+        <div class="leg-item"><div class="leg-dot dual-legend"></div><span>Born &amp; died here</span></div>
+      </div>
+    </div>
+
+    <div id="bottom-panel">
+      <!-- Question panel -->
+      <div id="question-panel">
+        <div id="clue-bar">
+          <span class="cat-badge" id="cat-badge"></span>
+          <span class="era-hint" id="era-hint"></span>
+        </div>
+        <div id="options-grid">
+          <button class="opt-btn" data-i="0"></button>
+          <button class="opt-btn" data-i="1"></button>
+          <button class="opt-btn" data-i="2"></button>
+          <button class="opt-btn" data-i="3"></button>
+        </div>
+      </div>
+
+      <!-- Fact card (shown after answering) -->
+      <div id="fact-card" class="hidden">
+        <div id="result-line"></div>
+        <div id="fact-name"></div>
+        <div id="fact-dates"></div>
+        <div id="fact-text"></div>
+        <button id="next-btn">Next →</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== RESULTS SCREEN ===== -->
+  <div id="results-screen" class="hidden">
+    <div id="results-header">
+      <h2>Quiz Complete!</h2>
+      <div id="final-score"></div>
+      <div id="score-msg"></div>
+    </div>
+    <div id="results-list"></div>
+    <div id="results-footer">
+      <button class="btn-primary" id="restart-btn" style="width:100%">Play Again</button>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─────────────────────────────────────────────
+//  DATA  –  202 famous deceased people
+// ─────────────────────────────────────────────
+const PEOPLE = [
+  // ── SCIENTISTS ──────────────────────────────
+  { name:"Albert Einstein",        cat:"Scientist",
+    born:{city:"Ulm, Germany",            lat:48.4011,  lng:9.9876,    yr:1879},
+    died:{city:"Princeton, USA",          lat:40.3573,  lng:-74.6672,  yr:1955},
+    fact:"Developed the theory of relativity; won the Nobel Prize in Physics in 1921." },
+
+  { name:"Charles Darwin",         cat:"Scientist",
+    born:{city:"Shrewsbury, England",     lat:52.7081,  lng:-2.7549,   yr:1809},
+    died:{city:"Downe, England",          lat:51.3333,  lng:0.0667,    yr:1882},
+    fact:"Proposed the theory of evolution by natural selection in 'On the Origin of Species'." },
+
+  { name:"Isaac Newton",           cat:"Scientist",
+    born:{city:"Woolsthorpe, England",    lat:52.8033,  lng:-0.6308,   yr:1643},
+    died:{city:"Kensington, England",     lat:51.4993,  lng:-0.1936,   yr:1727},
+    fact:"Formulated the laws of motion and universal gravitation, and co-invented calculus." },
+
+  { name:"Marie Curie",            cat:"Scientist",
+    born:{city:"Warsaw, Poland",          lat:52.2297,  lng:21.0122,   yr:1867},
+    died:{city:"Passy, France",           lat:46.0742,  lng:6.7747,    yr:1934},
+    fact:"First woman to win a Nobel Prize; the only person to win in two different sciences." },
+
+  { name:"Nikola Tesla",           cat:"Scientist",
+    born:{city:"Smiljan, Croatia",        lat:44.5611,  lng:15.3389,   yr:1856},
+    died:{city:"New York City, USA",      lat:40.7128,  lng:-74.0060,  yr:1943},
+    fact:"Pioneered alternating current (AC) electrical systems and wireless technology." },
+
+  { name:"Galileo Galilei",        cat:"Scientist",
+    born:{city:"Pisa, Italy",             lat:43.7228,  lng:10.4017,   yr:1564},
+    died:{city:"Arcetri, Italy",          lat:43.7411,  lng:11.2458,   yr:1642},
+    fact:"Championed heliocentrism and made foundational contributions to physics and astronomy." },
+
+  { name:"Alan Turing",            cat:"Scientist",
+    born:{city:"London, England",         lat:51.5074,  lng:-0.1278,   yr:1912},
+    died:{city:"Wilmslow, England",       lat:53.3302,  lng:-2.2330,   yr:1954},
+    fact:"Father of theoretical computer science; his codebreaking work helped the Allies win WWII." },
+
+  { name:"Louis Pasteur",          cat:"Scientist",
+    born:{city:"Dole, France",            lat:47.0922,  lng:5.4994,    yr:1822},
+    died:{city:"Marnes-la-Coquette, France", lat:48.8292, lng:2.1603,  yr:1895},
+    fact:"Developed germ theory and pasteurization, saving countless lives." },
+
+  { name:"Max Planck",             cat:"Scientist",
+    born:{city:"Kiel, Germany",           lat:54.3213,  lng:10.1349,   yr:1858},
+    died:{city:"Göttingen, Germany",      lat:51.5413,  lng:9.9158,    yr:1947},
+    fact:"Originated quantum theory, proposing that energy is emitted in discrete quanta." },
+
+  { name:"Ernest Rutherford",      cat:"Scientist",
+    born:{city:"Brightwater, New Zealand",lat:-41.3833, lng:173.1333,  yr:1871},
+    died:{city:"Cambridge, England",      lat:52.2053,  lng:0.1218,    yr:1937},
+    fact:"Discovered the atomic nucleus; called the father of nuclear physics." },
+
+  { name:"Michael Faraday",        cat:"Scientist",
+    born:{city:"Newington, England",      lat:51.4974,  lng:-0.1007,   yr:1791},
+    died:{city:"Hampton Court, England",  lat:51.4036,  lng:-0.3383,   yr:1867},
+    fact:"Discovered electromagnetic induction, laying the groundwork for electric motors and generators." },
+
+  { name:"Gregor Mendel",          cat:"Scientist",
+    born:{city:"Hynčice, Czech Republic", lat:49.8728,  lng:17.7894,   yr:1822},
+    died:{city:"Brno, Czech Republic",    lat:49.1951,  lng:16.6068,   yr:1884},
+    fact:"Founded the science of genetics through meticulous experiments with pea plants." },
+
+  { name:"Johannes Kepler",        cat:"Scientist",
+    born:{city:"Weil der Stadt, Germany", lat:48.7500,  lng:8.8699,    yr:1571},
+    died:{city:"Regensburg, Germany",     lat:49.0134,  lng:12.1016,   yr:1630},
+    fact:"Formulated the three laws of planetary motion, a cornerstone of astronomy." },
+
+  { name:"Niels Bohr",             cat:"Scientist",
+    born:{city:"Copenhagen, Denmark",     lat:55.6761,  lng:12.5683,   yr:1885},
+    died:{city:"Copenhagen, Denmark",     lat:55.6850,  lng:12.5950,   yr:1962},
+    fact:"Developed the Bohr model of the atom and made foundational contributions to quantum mechanics." },
+
+  { name:"Enrico Fermi",           cat:"Scientist",
+    born:{city:"Rome, Italy",             lat:41.9028,  lng:12.4964,   yr:1901},
+    died:{city:"Chicago, USA",            lat:41.8781,  lng:-87.6298,  yr:1954},
+    fact:"Achieved the first controlled nuclear chain reaction and worked on the Manhattan Project." },
+
+  { name:"Nicolaus Copernicus",    cat:"Scientist",
+    born:{city:"Toruń, Poland",           lat:53.0138,  lng:18.5981,   yr:1473},
+    died:{city:"Frombork, Poland",        lat:54.3595,  lng:19.6793,   yr:1543},
+    fact:"Proposed the heliocentric model of the solar system, revolutionizing astronomy." },
+
+  { name:"Antoine Lavoisier",      cat:"Scientist",
+    born:{city:"Paris, France",           lat:48.8566,  lng:2.3522,    yr:1743},
+    died:{city:"Paris, France",           lat:48.8580,  lng:2.3450,    yr:1794},
+    fact:"Father of modern chemistry; identified oxygen's role in combustion and coined chemical nomenclature." },
+
+  // ── ARTISTS / WRITERS ───────────────────────
+  { name:"Leonardo da Vinci",      cat:"Artist",
+    born:{city:"Anchiano, Italy",         lat:43.7872,  lng:10.9242,   yr:1452},
+    died:{city:"Amboise, France",         lat:47.4137,  lng:0.9793,    yr:1519},
+    fact:"Universal Renaissance genius; painter of the Mona Lisa and The Last Supper." },
+
+  { name:"William Shakespeare",    cat:"Author",
+    born:{city:"Stratford-upon-Avon, England", lat:52.1920, lng:-1.7081, yr:1564},
+    died:{city:"Stratford-upon-Avon, England", lat:52.1930, lng:-1.7100, yr:1616},
+    fact:"Greatest playwright in the English language; wrote Hamlet, Macbeth, and Romeo and Juliet." },
+
+  { name:"Pablo Picasso",          cat:"Artist",
+    born:{city:"Málaga, Spain",           lat:36.7213,  lng:-4.4214,   yr:1881},
+    died:{city:"Mougins, France",         lat:43.5979,  lng:7.0060,    yr:1973},
+    fact:"Co-founder of Cubism; one of the most influential and prolific artists of the 20th century." },
+
+  { name:"Michelangelo",           cat:"Artist",
+    born:{city:"Caprese, Italy",          lat:43.6391,  lng:11.9826,   yr:1475},
+    died:{city:"Rome, Italy",             lat:41.9100,  lng:12.4700,   yr:1564},
+    fact:"Renaissance master who sculpted David and painted the breathtaking Sistine Chapel ceiling." },
+
+  { name:"Rembrandt van Rijn",     cat:"Artist",
+    born:{city:"Leiden, Netherlands",     lat:52.1601,  lng:4.4970,    yr:1606},
+    died:{city:"Amsterdam, Netherlands",  lat:52.3676,  lng:4.9041,    yr:1669},
+    fact:"Master of the Dutch Golden Age, renowned for his extraordinary use of light and shadow." },
+
+  { name:"Leo Tolstoy",            cat:"Author",
+    born:{city:"Yasnaya Polyana, Russia", lat:53.7613,  lng:37.5279,   yr:1828},
+    died:{city:"Astapovo, Russia",        lat:53.5817,  lng:38.9311,   yr:1910},
+    fact:"Author of War and Peace and Anna Karenina, two of the greatest novels ever written." },
+
+  { name:"Fyodor Dostoyevsky",     cat:"Author",
+    born:{city:"Moscow, Russia",          lat:55.7558,  lng:37.6176,   yr:1821},
+    died:{city:"Saint Petersburg, Russia",lat:59.9311,  lng:30.3609,   yr:1881},
+    fact:"Author of Crime and Punishment and The Brothers Karamazov, masterworks of psychological fiction." },
+
+  { name:"Franz Kafka",            cat:"Author",
+    born:{city:"Prague, Bohemia",         lat:50.0755,  lng:14.4378,   yr:1883},
+    died:{city:"Kierling, Austria",       lat:48.3369,  lng:16.2944,   yr:1924},
+    fact:"Author of The Metamorphosis and The Trial; his name became synonymous with surreal bureaucracy." },
+
+  { name:"Charles Dickens",        cat:"Author",
+    born:{city:"Portsmouth, England",     lat:50.8198,  lng:-1.0880,   yr:1812},
+    died:{city:"Higham, England",         lat:51.4073,  lng:0.5249,    yr:1870},
+    fact:"Author of Oliver Twist, A Tale of Two Cities, and Great Expectations." },
+
+  { name:"Jane Austen",            cat:"Author",
+    born:{city:"Steventon, England",      lat:51.1987,  lng:-1.2085,   yr:1775},
+    died:{city:"Winchester, England",     lat:51.0632,  lng:-1.3082,   yr:1817},
+    fact:"Author of Pride and Prejudice and Sense and Sensibility; pioneer of the modern novel." },
+
+  { name:"Victor Hugo",            cat:"Author",
+    born:{city:"Besançon, France",        lat:47.2378,  lng:6.0241,    yr:1802},
+    died:{city:"Paris, France",           lat:48.8650,  lng:2.3400,    yr:1885},
+    fact:"Author of Les Misérables and The Hunchback of Notre-Dame; a towering figure of French literature." },
+
+  { name:"Johann Wolfgang von Goethe", cat:"Author",
+    born:{city:"Frankfurt, Germany",      lat:50.1109,  lng:8.6821,    yr:1749},
+    died:{city:"Weimar, Germany",         lat:50.9790,  lng:11.3236,   yr:1832},
+    fact:"Author of Faust, considered the masterpiece of German literature." },
+
+  { name:"Ernest Hemingway",       cat:"Author",
+    born:{city:"Oak Park, USA",           lat:41.8850,  lng:-87.7845,  yr:1899},
+    died:{city:"Ketchum, USA",            lat:43.6804,  lng:-114.3631, yr:1961},
+    fact:"Nobel laureate; wrote The Old Man and the Sea, For Whom the Bell Tolls, and A Farewell to Arms." },
+
+  { name:"Anton Chekhov",          cat:"Author",
+    born:{city:"Taganrog, Russia",        lat:47.2362,  lng:38.8962,   yr:1860},
+    died:{city:"Badenweiler, Germany",    lat:47.7947,  lng:7.6975,    yr:1904},
+    fact:"Master of the short story and playwright; wrote The Cherry Orchard and The Seagull." },
+
+  { name:"Miguel de Cervantes",    cat:"Author",
+    born:{city:"Alcalá de Henares, Spain",lat:40.4820,  lng:-3.3642,   yr:1547},
+    died:{city:"Madrid, Spain",           lat:40.4168,  lng:-3.7038,   yr:1616},
+    fact:"Author of Don Quixote, widely considered the first modern novel and one of the greatest." },
+
+  { name:"Edgar Allan Poe",        cat:"Author",
+    born:{city:"Boston, USA",             lat:42.3601,  lng:-71.0589,  yr:1809},
+    died:{city:"Baltimore, USA",          lat:39.2904,  lng:-76.6122,  yr:1849},
+    fact:"Master of Gothic fiction and horror; wrote The Raven, The Tell-Tale Heart, and more." },
+
+  { name:"Oscar Wilde",            cat:"Author",
+    born:{city:"Dublin, Ireland",         lat:53.3498,  lng:-6.2603,   yr:1854},
+    died:{city:"Paris, France",           lat:48.8530,  lng:2.3380,    yr:1900},
+    fact:"Playwright and wit; wrote The Importance of Being Earnest and The Picture of Dorian Gray." },
+
+  // ── POLITICIANS / LEADERS ───────────────────
+  { name:"Napoleon Bonaparte",     cat:"Politician",
+    born:{city:"Ajaccio, Corsica",        lat:41.9267,  lng:8.7369,    yr:1769},
+    died:{city:"Longwood, Saint Helena",  lat:-15.9650, lng:-5.7089,   yr:1821},
+    fact:"Military genius who conquered much of Europe and became Emperor of the French." },
+
+  { name:"Abraham Lincoln",        cat:"Politician",
+    born:{city:"Hardin County, USA",      lat:37.5332,  lng:-85.7716,  yr:1809},
+    died:{city:"Washington DC, USA",      lat:38.9072,  lng:-77.0369,  yr:1865},
+    fact:"16th U.S. President; led the country through the Civil War and abolished slavery." },
+
+  { name:"Julius Caesar",          cat:"Politician",
+    born:{city:"Rome, Roman Republic",    lat:41.9028,  lng:12.4964,   yr:-100},
+    died:{city:"Rome, Roman Republic",    lat:41.9050,  lng:12.5100,   yr:-44},
+    fact:"Roman general and dictator who transformed the Roman Republic; assassinated on the Ides of March." },
+
+  { name:"Winston Churchill",      cat:"Politician",
+    born:{city:"Blenheim Palace, England",lat:51.8278,  lng:-1.3538,   yr:1874},
+    died:{city:"London, England",         lat:51.5010,  lng:-0.1500,   yr:1965},
+    fact:"British Prime Minister who led the UK through World War II with defiant and inspiring speeches." },
+
+  { name:"Mahatma Gandhi",         cat:"Politician",
+    born:{city:"Porbandar, India",        lat:21.6417,  lng:69.6293,   yr:1869},
+    died:{city:"New Delhi, India",        lat:28.6139,  lng:77.2090,   yr:1948},
+    fact:"Led India's independence movement through nonviolent civil disobedience." },
+
+  { name:"George Washington",      cat:"Politician",
+    born:{city:"Westmoreland Co., USA",   lat:38.1938,  lng:-76.6350,  yr:1732},
+    died:{city:"Mount Vernon, USA",       lat:38.7079,  lng:-77.1034,  yr:1799},
+    fact:"First President of the United States and Commander-in-Chief of the Continental Army." },
+
+  { name:"Alexander the Great",    cat:"Politician",
+    born:{city:"Pella, Macedon",          lat:40.7636,  lng:22.5239,   yr:-356},
+    died:{city:"Babylon",                 lat:32.5355,  lng:44.4207,   yr:-323},
+    fact:"Conquered an empire from Greece to northwestern India; undefeated in battle." },
+
+  { name:"Cleopatra VII",          cat:"Politician",
+    born:{city:"Alexandria, Egypt",       lat:31.2001,  lng:29.9187,   yr:-69},
+    died:{city:"Alexandria, Egypt",       lat:31.2050,  lng:29.9250,   yr:-30},
+    fact:"Last active pharaoh of ancient Egypt; formed powerful alliances with Caesar and Mark Antony." },
+
+  { name:"Oliver Cromwell",        cat:"Politician",
+    born:{city:"Huntingdon, England",     lat:52.3319,  lng:-0.1770,   yr:1599},
+    died:{city:"London, England",         lat:51.5074,  lng:-0.1278,   yr:1658},
+    fact:"Led Parliament to victory in the English Civil War and ruled as Lord Protector of England." },
+
+  { name:"Joan of Arc",            cat:"Politician",
+    born:{city:"Domrémy, France",         lat:48.4408,  lng:5.6883,    yr:1412},
+    died:{city:"Rouen, France",           lat:49.4432,  lng:1.0993,    yr:1431},
+    fact:"Led France to key victories in the Hundred Years' War; burned at the stake at age 19." },
+
+  { name:"Genghis Khan",           cat:"Politician",
+    born:{city:"Khentii, Mongolia",       lat:48.5000,  lng:109.0000,  yr:1162},
+    died:{city:"Qingshui, China",         lat:34.7398,  lng:105.8961,  yr:1227},
+    fact:"Founded and led the Mongol Empire, the largest contiguous land empire in history." },
+
+  { name:"Vladimir Lenin",         cat:"Politician",
+    born:{city:"Simbirsk, Russia",        lat:54.3282,  lng:48.3866,   yr:1870},
+    died:{city:"Gorki, Russia",           lat:55.5667,  lng:37.0167,   yr:1924},
+    fact:"Led the Bolshevik Revolution in 1917 and was the first leader of the Soviet Union." },
+
+  { name:"Mao Zedong",             cat:"Politician",
+    born:{city:"Shaoshan, China",         lat:27.9147,  lng:112.5297,  yr:1893},
+    died:{city:"Beijing, China",          lat:39.9042,  lng:116.4074,  yr:1976},
+    fact:"Founded the People's Republic of China in 1949 and led it for nearly three decades." },
+
+  { name:"Theodore Roosevelt",     cat:"Politician",
+    born:{city:"New York City, USA",      lat:40.7128,  lng:-74.0060,  yr:1858},
+    died:{city:"Oyster Bay, USA",         lat:40.8673,  lng:-73.5326,  yr:1919},
+    fact:"26th U.S. President; champion of conservation, progressive politics, and Nobel Peace Prize winner." },
+
+  { name:"Simón Bolívar",          cat:"Politician",
+    born:{city:"Caracas, Venezuela",      lat:10.4806,  lng:-66.9036,  yr:1783},
+    died:{city:"Santa Marta, Colombia",   lat:11.2408,  lng:-74.2110,  yr:1830},
+    fact:"'The Liberator' who freed six South American nations from Spanish colonial rule." },
+
+  { name:"Otto von Bismarck",      cat:"Politician",
+    born:{city:"Schönhausen, Germany",    lat:52.5940,  lng:12.0363,   yr:1815},
+    died:{city:"Friedrichsruh, Germany",  lat:53.5290,  lng:10.3700,   yr:1898},
+    fact:"Unified the German states into the German Empire and served as its first Chancellor." },
+
+  { name:"Charlemagne",            cat:"Politician",
+    born:{city:"Herstal, Belgium",        lat:50.6750,  lng:5.6400,    yr:742},
+    died:{city:"Aachen, Germany",         lat:50.7753,  lng:6.0839,    yr:814},
+    fact:"United much of Western Europe; crowned Emperor of the Romans in 800 AD." },
+
+  // ── EXPLORERS ───────────────────────────────
+  { name:"Christopher Columbus",   cat:"Explorer",
+    born:{city:"Genoa, Italy",            lat:44.4056,  lng:8.9463,    yr:1451},
+    died:{city:"Valladolid, Spain",       lat:41.6523,  lng:-4.7245,   yr:1506},
+    fact:"Completed four voyages to the Americas, opening the New World to European colonization." },
+
+  { name:"Ferdinand Magellan",     cat:"Explorer",
+    born:{city:"Sabrosa, Portugal",       lat:41.2712,  lng:-7.5731,   yr:1480},
+    died:{city:"Mactan, Philippines",     lat:10.3132,  lng:124.0147,  yr:1521},
+    fact:"Led the first expedition to circumnavigate the globe, though he was killed before it finished." },
+
+  { name:"Vasco da Gama",          cat:"Explorer",
+    born:{city:"Sines, Portugal",         lat:37.9541,  lng:-8.8680,   yr:1460},
+    died:{city:"Cochin, India",           lat:9.9312,   lng:76.2673,   yr:1524},
+    fact:"First European to sail directly from Europe to India, opening a lucrative sea route." },
+
+  { name:"Roald Amundsen",         cat:"Explorer",
+    born:{city:"Borge, Norway",           lat:59.2833,  lng:10.9833,   yr:1872},
+    died:{city:"Barents Sea",             lat:74.0000,  lng:15.0000,   yr:1928},
+    fact:"First person to reach the South Pole (1911) and first to navigate the Northwest Passage." },
+
+  { name:"James Cook",             cat:"Explorer",
+    born:{city:"Marton, England",         lat:54.4808,  lng:-1.2330,   yr:1728},
+    died:{city:"Kealakekua Bay, Hawaii",  lat:19.4786,  lng:-155.9312, yr:1779},
+    fact:"Made three epic voyages, mapping New Zealand, eastern Australia, and Hawaii." },
+
+  { name:"Marco Polo",             cat:"Explorer",
+    born:{city:"Venice, Italy",           lat:45.4408,  lng:12.3155,   yr:1254},
+    died:{city:"Venice, Italy",           lat:45.4500,  lng:12.3300,   yr:1324},
+    fact:"Traveled from Venice to China, served Kublai Khan, and wrote a celebrated travel account." },
+
+  { name:"David Livingstone",      cat:"Explorer",
+    born:{city:"Blantyre, Scotland",      lat:55.7948,  lng:-4.0833,   yr:1813},
+    died:{city:"Chitambo, Zambia",        lat:-11.5333, lng:29.5667,   yr:1873},
+    fact:"First European to see Victoria Falls; explored vast regions of central Africa." },
+
+  { name:"Henry Hudson",           cat:"Explorer",
+    born:{city:"England",                 lat:51.5074,  lng:-0.1278,   yr:1565},
+    died:{city:"Hudson Bay, Canada",      lat:56.0000,  lng:-80.0000,  yr:1611},
+    fact:"Explored the Hudson River and Hudson Bay before his crew mutinied and cast him adrift." },
+
+  { name:"Hernán Cortés",          cat:"Explorer",
+    born:{city:"Medellín, Spain",         lat:38.9500,  lng:-6.1500,   yr:1485},
+    died:{city:"Castilleja, Spain",       lat:37.3773,  lng:-6.0496,   yr:1547},
+    fact:"Led the Spanish conquest of the Aztec Empire in Mexico with a small but determined force." },
+
+  { name:"Francisco Pizarro",      cat:"Explorer",
+    born:{city:"Trujillo, Spain",         lat:39.4594,  lng:-5.8822,   yr:1471},
+    died:{city:"Lima, Peru",              lat:-12.0464, lng:-77.0428,  yr:1541},
+    fact:"Conquered the mighty Inca Empire with just 168 soldiers." },
+
+  { name:"Francis Drake",          cat:"Explorer",
+    born:{city:"Tavistock, England",      lat:50.5494,  lng:-4.1459,   yr:1540},
+    died:{city:"Portobelo, Panama",       lat:9.5611,   lng:-79.6508,  yr:1596},
+    fact:"First Englishman to circumnavigate the globe; helped defeat the Spanish Armada in 1588." },
+
+  { name:"Amerigo Vespucci",       cat:"Explorer",
+    born:{city:"Florence, Italy",         lat:43.7696,  lng:11.2558,   yr:1454},
+    died:{city:"Seville, Spain",          lat:37.3891,  lng:-5.9845,   yr:1512},
+    fact:"Proved the Americas were a separate continent; both continents were named after him." },
+
+  { name:"Zheng He",               cat:"Explorer",
+    born:{city:"Yunnan, China",           lat:24.6800,  lng:102.8200,  yr:1371},
+    died:{city:"Calicut, India",          lat:11.2588,  lng:75.7804,   yr:1433},
+    fact:"Led seven epic Chinese voyages covering Southeast Asia, South Asia, and East Africa." },
+
+  { name:"Ernest Shackleton",      cat:"Explorer",
+    born:{city:"Kilkea, Ireland",         lat:52.8958,  lng:-6.9431,   yr:1874},
+    died:{city:"Grytviken, South Georgia",lat:-54.2808, lng:-36.5077,  yr:1922},
+    fact:"Led the Imperial Trans-Antarctic Expedition; famously rescued all 27 of his stranded men." },
+
+  { name:"Ibn Battuta",            cat:"Explorer",
+    born:{city:"Tangier, Morocco",        lat:35.7595,  lng:-5.8340,   yr:1304},
+    died:{city:"Morocco",                 lat:31.6300,  lng:-7.9900,   yr:1368},
+    fact:"Traveled over 75,000 miles across Africa, Europe, the Middle East, and Asia." },
+
+  { name:"Bartolomeu Dias",        cat:"Explorer",
+    born:{city:"Algarve, Portugal",       lat:37.0200,  lng:-7.9300,   yr:1450},
+    died:{city:"Cape of Good Hope, Africa",lat:-34.3568,lng:18.4740,   yr:1500},
+    fact:"First European to sail around the southern tip of Africa, opening the route to Asia." },
+
+  { name:"Ponce de León",          cat:"Explorer",
+    born:{city:"Santervás, Spain",        lat:42.1200,  lng:-5.2000,   yr:1474},
+    died:{city:"Havana, Cuba",            lat:23.1136,  lng:-82.3666,  yr:1521},
+    fact:"First European to set foot in Florida, reportedly in search of the Fountain of Youth." },
+
+  // ── MUSICIANS / COMPOSERS ───────────────────
+  { name:"Wolfgang Amadeus Mozart", cat:"Composer",
+    born:{city:"Salzburg, Austria",       lat:47.8095,  lng:13.0550,   yr:1756},
+    died:{city:"Vienna, Austria",         lat:48.2082,  lng:16.3738,   yr:1791},
+    fact:"Child prodigy who composed over 800 works including 41 symphonies and 27 piano concertos." },
+
+  { name:"Ludwig van Beethoven",   cat:"Composer",
+    born:{city:"Bonn, Germany",           lat:50.7374,  lng:7.0982,    yr:1770},
+    died:{city:"Vienna, Austria",         lat:48.2150,  lng:16.3700,   yr:1827},
+    fact:"Composed his greatest works — including the 9th Symphony — after becoming completely deaf." },
+
+  { name:"Johann Sebastian Bach",  cat:"Composer",
+    born:{city:"Eisenach, Germany",       lat:50.9746,  lng:10.3226,   yr:1685},
+    died:{city:"Leipzig, Germany",        lat:51.3397,  lng:12.3731,   yr:1750},
+    fact:"Baroque master who composed the Brandenburg Concertos and the Well-Tempered Clavier." },
+
+  { name:"Frédéric Chopin",        cat:"Composer",
+    born:{city:"Żelazowa Wola, Poland",   lat:52.2368,  lng:20.1753,   yr:1810},
+    died:{city:"Paris, France",           lat:48.8620,  lng:2.3370,    yr:1849},
+    fact:"Called the 'Poet of the Piano'; his works are among the most beloved in the repertoire." },
+
+  { name:"Antonio Vivaldi",        cat:"Composer",
+    born:{city:"Venice, Italy",           lat:45.4408,  lng:12.3155,   yr:1678},
+    died:{city:"Vienna, Austria",         lat:48.2000,  lng:16.3600,   yr:1741},
+    fact:"Baroque virtuoso; composed The Four Seasons, one of the most-recorded pieces in history." },
+
+  { name:"Pyotr Ilyich Tchaikovsky", cat:"Composer",
+    born:{city:"Votkinsk, Russia",        lat:57.0485,  lng:53.9877,   yr:1840},
+    died:{city:"Saint Petersburg, Russia",lat:59.9400,  lng:30.3500,   yr:1893},
+    fact:"Composed Swan Lake, The Nutcracker, and the explosive 1812 Overture." },
+
+  { name:"Franz Schubert",         cat:"Composer",
+    born:{city:"Vienna, Austria",         lat:48.2082,  lng:16.3738,   yr:1797},
+    died:{city:"Vienna, Austria",         lat:48.2000,  lng:16.3850,   yr:1828},
+    fact:"Composed over 600 Lieder and the beloved 'Unfinished Symphony' in just 31 years." },
+
+  { name:"George Frideric Handel", cat:"Composer",
+    born:{city:"Halle, Germany",          lat:51.4825,  lng:11.9690,   yr:1685},
+    died:{city:"London, England",         lat:51.5074,  lng:-0.1200,   yr:1759},
+    fact:"Composed the oratorio Messiah; the Hallelujah chorus is among the most famous music ever written." },
+
+  { name:"Robert Schumann",        cat:"Composer",
+    born:{city:"Zwickau, Germany",        lat:50.7184,  lng:12.4966,   yr:1810},
+    died:{city:"Endenich, Germany",       lat:50.7374,  lng:7.1100,    yr:1856},
+    fact:"Romantic composer and influential music critic; wrote masterful piano works and song cycles." },
+
+  { name:"Giuseppe Verdi",         cat:"Composer",
+    born:{city:"Roncole, Italy",          lat:44.9636,  lng:10.1178,   yr:1813},
+    died:{city:"Milan, Italy",            lat:45.4654,  lng:9.1859,    yr:1901},
+    fact:"Dominant figure in 19th-century opera; composed Rigoletto, La Traviata, and Aida." },
+
+  { name:"Johannes Brahms",        cat:"Composer",
+    born:{city:"Hamburg, Germany",        lat:53.5753,  lng:10.0153,   yr:1833},
+    died:{city:"Vienna, Austria",         lat:48.2050,  lng:16.3700,   yr:1897},
+    fact:"Leading composer of the Romantic era; wrote four symphonies and the famous Lullaby." },
+
+  { name:"Richard Wagner",         cat:"Composer",
+    born:{city:"Leipzig, Germany",        lat:51.3397,  lng:12.3731,   yr:1813},
+    died:{city:"Venice, Italy",           lat:45.4350,  lng:12.3300,   yr:1883},
+    fact:"Revolutionary opera composer; invented the concept of Gesamtkunstwerk (total artwork)." },
+
+  { name:"Franz Liszt",            cat:"Composer",
+    born:{city:"Raiding, Hungary",        lat:47.5000,  lng:16.6500,   yr:1811},
+    died:{city:"Bayreuth, Germany",       lat:49.9456,  lng:11.5713,   yr:1886},
+    fact:"Greatest piano virtuoso of his era; invented the symphonic poem and the solo piano recital." },
+
+  { name:"Claudio Monteverdi",     cat:"Composer",
+    born:{city:"Cremona, Italy",          lat:45.1333,  lng:10.0333,   yr:1567},
+    died:{city:"Venice, Italy",           lat:45.4408,  lng:12.3250,   yr:1643},
+    fact:"Pioneer of opera; composed L'Orfeo (1607), considered the first major opera." },
+
+  { name:"Hector Berlioz",         cat:"Composer",
+    born:{city:"La Côte-Saint-André, France", lat:45.3933, lng:5.2564, yr:1803},
+    died:{city:"Paris, France",           lat:48.8566,  lng:2.3600,    yr:1869},
+    fact:"Innovative Romantic composer; wrote the groundbreaking Symphonie fantastique at age 26." },
+
+  { name:"Henry Purcell",          cat:"Composer",
+    born:{city:"Westminster, England",    lat:51.4984,  lng:-0.1299,   yr:1659},
+    died:{city:"Westminster, England",    lat:51.5000,  lng:-0.1400,   yr:1695},
+    fact:"Greatest English composer of the Baroque era; wrote Dido and Aeneas and much royal music." },
+
+  { name:"Camille Saint-Saëns",    cat:"Composer",
+    born:{city:"Paris, France",           lat:48.8566,  lng:2.3522,    yr:1835},
+    died:{city:"Algiers, Algeria",        lat:36.7372,  lng:3.0870,    yr:1921},
+    fact:"Prolific French composer famous for The Carnival of the Animals and Samson and Delilah." },
+
+  // ── PHILOSOPHERS ────────────────────────────
+  { name:"Socrates",               cat:"Philosopher",
+    born:{city:"Athens, Greece",          lat:37.9838,  lng:23.7275,   yr:-470},
+    died:{city:"Athens, Greece",          lat:37.9900,  lng:23.7350,   yr:-399},
+    fact:"Founder of Western philosophy; executed by Athens for 'corrupting the youth'." },
+
+  { name:"Plato",                  cat:"Philosopher",
+    born:{city:"Athens, Greece",          lat:37.9838,  lng:23.7275,   yr:-427},
+    died:{city:"Athens, Greece",          lat:37.9750,  lng:23.7200,   yr:-347},
+    fact:"Student of Socrates; founded the Academy in Athens and wrote the Republic." },
+
+  { name:"Aristotle",              cat:"Philosopher",
+    born:{city:"Stagira, Greece",         lat:40.5308,  lng:23.7403,   yr:-384},
+    died:{city:"Chalcis, Greece",         lat:38.4633,  lng:23.5943,   yr:-322},
+    fact:"Student of Plato; tutor of Alexander the Great; wrote foundational works on nearly every subject." },
+
+  { name:"Immanuel Kant",          cat:"Philosopher",
+    born:{city:"Königsberg, Prussia",     lat:54.7104,  lng:20.4522,   yr:1724},
+    died:{city:"Königsberg, Prussia",     lat:54.7200,  lng:20.4600,   yr:1804},
+    fact:"Wrote Critique of Pure Reason; his moral philosophy and epistemology shaped modern thought." },
+
+  { name:"Friedrich Nietzsche",    cat:"Philosopher",
+    born:{city:"Röcken, Germany",         lat:51.2369,  lng:12.0975,   yr:1844},
+    died:{city:"Weimar, Germany",         lat:50.9790,  lng:11.3236,   yr:1900},
+    fact:"Proclaimed 'God is dead'; developed influential ideas on the will to power and the Übermensch." },
+
+  { name:"René Descartes",         cat:"Philosopher",
+    born:{city:"La Haye en Touraine, France", lat:46.9333, lng:0.7833, yr:1596},
+    died:{city:"Stockholm, Sweden",       lat:59.3293,  lng:18.0686,   yr:1650},
+    fact:"Father of modern philosophy; proposed 'Cogito, ergo sum' — I think, therefore I am." },
+
+  { name:"Voltaire",               cat:"Philosopher",
+    born:{city:"Paris, France",           lat:48.8566,  lng:2.3522,    yr:1694},
+    died:{city:"Paris, France",           lat:48.8600,  lng:2.3600,    yr:1778},
+    fact:"Advocate of freedom of speech, religion, and the separation of church and state." },
+
+  { name:"Jean-Jacques Rousseau",  cat:"Philosopher",
+    born:{city:"Geneva, Switzerland",     lat:46.2044,  lng:6.1432,    yr:1712},
+    died:{city:"Ermenonville, France",    lat:49.1333,  lng:2.7000,    yr:1778},
+    fact:"Developed political philosophy on popular sovereignty and the social contract." },
+
+  { name:"David Hume",             cat:"Philosopher",
+    born:{city:"Edinburgh, Scotland",     lat:55.9533,  lng:-3.1883,   yr:1711},
+    died:{city:"Edinburgh, Scotland",     lat:55.9600,  lng:-3.1800,   yr:1776},
+    fact:"Empiricist philosopher who greatly influenced Kant; a sceptic of religion and causation." },
+
+  { name:"John Locke",             cat:"Philosopher",
+    born:{city:"Wrington, England",       lat:51.3667,  lng:-2.7167,   yr:1632},
+    died:{city:"Oates, England",          lat:51.8153,  lng:0.2066,    yr:1704},
+    fact:"Father of liberalism; proposed natural rights to life, liberty, and property." },
+
+  { name:"Thomas Hobbes",          cat:"Philosopher",
+    born:{city:"Westport, England",       lat:51.5893,  lng:-2.1510,   yr:1588},
+    died:{city:"Hardwick, England",       lat:53.1635,  lng:-1.3217,   yr:1679},
+    fact:"Author of Leviathan; argued for a powerful sovereign to prevent the 'war of all against all'." },
+
+  { name:"Baruch Spinoza",         cat:"Philosopher",
+    born:{city:"Amsterdam, Netherlands",  lat:52.3676,  lng:4.9041,    yr:1632},
+    died:{city:"The Hague, Netherlands",  lat:52.0705,  lng:4.3007,    yr:1677},
+    fact:"Rationalist philosopher who proposed that God and Nature are one (Deus sive Natura)." },
+
+  { name:"Karl Marx",              cat:"Politician",
+    born:{city:"Trier, Germany",          lat:49.7596,  lng:6.6441,    yr:1818},
+    died:{city:"London, England",         lat:51.5460,  lng:-0.1430,   yr:1883},
+    fact:"Co-wrote The Communist Manifesto; his ideas on class struggle shaped the 20th century." },
+
+  { name:"Hannah Arendt",          cat:"Philosopher",
+    born:{city:"Hannover, Germany",       lat:52.3759,  lng:9.7320,    yr:1906},
+    died:{city:"New York, USA",           lat:40.7128,  lng:-74.0060,  yr:1975},
+    fact:"Political philosopher who examined totalitarianism and the 'banality of evil' in landmark works including The Origins of Totalitarianism." },
+
+  { name:"Georg Wilhelm Friedrich Hegel", cat:"Philosopher",
+    born:{city:"Stuttgart, Germany",      lat:48.7758,  lng:9.1829,    yr:1770},
+    died:{city:"Berlin, Germany",         lat:52.5200,  lng:13.4050,   yr:1831},
+    fact:"Developed the dialectical method; profoundly influenced Marx, existentialism, and modern thought." },
+
+  { name:"Arthur Schopenhauer",    cat:"Philosopher",
+    born:{city:"Danzig, Poland",          lat:54.3520,  lng:18.6466,   yr:1788},
+    died:{city:"Frankfurt, Germany",      lat:50.1109,  lng:8.6821,    yr:1860},
+    fact:"Pessimist philosopher; wrote The World as Will and Representation, influencing Nietzsche and Freud." },
+
+  { name:"Confucius",              cat:"Philosopher",
+    born:{city:"Qufu, China",             lat:35.5973,  lng:116.9917,  yr:-551},
+    died:{city:"Qufu, China",             lat:35.6000,  lng:117.0000,  yr:-479},
+    fact:"Chinese sage whose teachings on ethics and society profoundly shaped East Asian civilizations." },
+
+  { name:"John Stuart Mill",       cat:"Philosopher",
+    born:{city:"London, England",         lat:51.5074,  lng:-0.1278,   yr:1806},
+    died:{city:"Avignon, France",         lat:43.9493,  lng:4.8055,    yr:1873},
+    fact:"Utilitarian philosopher; championed individual liberty and was an early advocate for women's rights." },
+
+  // ── NEW SCIENTISTS ──────────────────────────
+  { name:"Stephen Hawking",         cat:"Scientist",
+    born:{city:"Oxford, England",             lat:51.7520,  lng:-1.2577,   yr:1942},
+    died:{city:"Cambridge, England",          lat:52.2053,  lng:0.1218,    yr:2018},
+    fact:"Theoretical physicist who described black hole radiation; wrote A Brief History of Time despite suffering from ALS." },
+
+  { name:"Richard Feynman",         cat:"Scientist",
+    born:{city:"New York City, USA",          lat:40.7128,  lng:-74.0060,  yr:1918},
+    died:{city:"Los Angeles, USA",            lat:34.0522,  lng:-118.2437, yr:1988},
+    fact:"Nobel Prize physicist who developed quantum electrodynamics; legendary teacher and eccentric genius." },
+
+  { name:"Alexander Fleming",       cat:"Scientist",
+    born:{city:"Darvel, Scotland",            lat:55.6177,  lng:-4.2853,   yr:1881},
+    died:{city:"London, England",             lat:51.5090,  lng:-0.1420,   yr:1955},
+    fact:"Discovered penicillin in 1928, launching the antibiotic era and saving hundreds of millions of lives." },
+
+  { name:"Carl Linnaeus",           cat:"Scientist",
+    born:{city:"Råshult, Sweden",             lat:56.6333,  lng:14.1667,   yr:1707},
+    died:{city:"Uppsala, Sweden",             lat:59.8586,  lng:17.6389,   yr:1778},
+    fact:"Founded the modern system of biological classification and binomial nomenclature." },
+
+  { name:"Dmitri Mendeleev",        cat:"Scientist",
+    born:{city:"Tobolsk, Russia",             lat:58.2007,  lng:68.2554,   yr:1834},
+    died:{city:"Saint Petersburg, Russia",    lat:59.9311,  lng:30.3609,   yr:1907},
+    fact:"Created the Periodic Table of Elements, correctly predicting the existence of undiscovered elements." },
+
+  { name:"James Clerk Maxwell",     cat:"Scientist",
+    born:{city:"Edinburgh, Scotland",         lat:55.9533,  lng:-3.1883,   yr:1831},
+    died:{city:"Cambridge, England",          lat:52.2053,  lng:0.1218,    yr:1879},
+    fact:"Unified electricity, magnetism, and light in his equations; Einstein called him the greatest physicist since Newton." },
+
+  { name:"Ada Lovelace",            cat:"Scientist",
+    born:{city:"London, England",             lat:51.5074,  lng:-0.1278,   yr:1815},
+    died:{city:"Marylebone, England",         lat:51.5200,  lng:-0.1500,   yr:1852},
+    fact:"Mathematician considered the world's first computer programmer, writing an algorithm for Babbage's Analytical Engine." },
+
+  { name:"Emmy Noether",            cat:"Scientist",
+    born:{city:"Erlangen, Germany",           lat:49.5897,  lng:11.0078,   yr:1882},
+    died:{city:"Bryn Mawr, USA",              lat:40.0204,  lng:-75.3199,  yr:1935},
+    fact:"One of history's greatest mathematicians; her theorem linking symmetry and conservation laws underpins modern physics." },
+
+  { name:"Werner Heisenberg",       cat:"Scientist",
+    born:{city:"Würzburg, Germany",           lat:49.7913,  lng:9.9534,    yr:1901},
+    died:{city:"Munich, Germany",             lat:48.1351,  lng:11.5820,   yr:1976},
+    fact:"Formulated the Uncertainty Principle, one of the cornerstones of quantum mechanics." },
+
+  { name:"Archimedes",              cat:"Scientist",
+    born:{city:"Syracuse, Sicily",            lat:37.0757,  lng:15.2866,   yr:-287},
+    died:{city:"Syracuse, Sicily",            lat:37.0820,  lng:15.2920,   yr:-212},
+    fact:"Ancient Greek genius who discovered buoyancy and approximated pi; invented remarkable war machines." },
+
+  { name:"Lise Meitner",            cat:"Scientist",
+    born:{city:"Vienna, Austria",             lat:48.2082,  lng:16.3738,   yr:1878},
+    died:{city:"Cambridge, England",          lat:52.2060,  lng:0.1250,    yr:1968},
+    fact:"Co-discovered nuclear fission; one of the most important physicists of the 20th century." },
+
+  { name:"Edward Jenner",           cat:"Scientist",
+    born:{city:"Berkeley, England",           lat:51.6922,  lng:-2.4572,   yr:1749},
+    died:{city:"Berkeley, England",           lat:51.7000,  lng:-2.4650,   yr:1823},
+    fact:"Developed the world's first successful vaccine — for smallpox — one of the greatest medical achievements in history." },
+
+  { name:"William Harvey",          cat:"Scientist",
+    born:{city:"Folkestone, England",         lat:51.0810,  lng:1.1670,    yr:1578},
+    died:{city:"Roehampton, England",         lat:51.4580,  lng:-0.2390,   yr:1657},
+    fact:"First to accurately describe the circulatory system and the pumping role of the heart." },
+
+  { name:"Erwin Schrödinger",       cat:"Scientist",
+    born:{city:"Vienna, Austria",             lat:48.2082,  lng:16.3738,   yr:1887},
+    died:{city:"Vienna, Austria",             lat:48.2150,  lng:16.3850,   yr:1961},
+    fact:"Developed the wave equation at the heart of quantum mechanics; famous for his Schrödinger's Cat thought experiment." },
+
+  { name:"Paul Dirac",              cat:"Scientist",
+    born:{city:"Bristol, England",            lat:51.4545,  lng:-2.5879,   yr:1902},
+    died:{city:"Tallahassee, USA",            lat:30.4383,  lng:-84.2807,  yr:1984},
+    fact:"Predicted the existence of antimatter; his equation brilliantly combined quantum mechanics and special relativity." },
+
+  { name:"Francis Crick",           cat:"Scientist",
+    born:{city:"Northampton, England",        lat:52.2405,  lng:-0.9027,   yr:1916},
+    died:{city:"San Diego, USA",              lat:32.7157,  lng:-117.1611, yr:2004},
+    fact:"Co-discovered the double helix structure of DNA with James Watson, unlocking the molecular secret of life." },
+
+  { name:"John von Neumann",        cat:"Scientist",
+    born:{city:"Budapest, Hungary",           lat:47.4979,  lng:19.0402,   yr:1903},
+    died:{city:"Washington DC, USA",          lat:38.9072,  lng:-77.0369,  yr:1957},
+    fact:"Polymath genius who made foundational contributions to quantum mechanics, computer architecture, and game theory." },
+
+  // ── NEW ARTISTS / WRITERS ───────────────────
+  { name:"Dante Alighieri",         cat:"Author",
+    born:{city:"Florence, Italy",             lat:43.7696,  lng:11.2558,   yr:1265},
+    died:{city:"Ravenna, Italy",              lat:44.4184,  lng:12.2035,   yr:1321},
+    fact:"Author of The Divine Comedy, widely considered one of the greatest works in world literature." },
+
+  { name:"Mark Twain",              cat:"Author",
+    born:{city:"Florida, Missouri, USA",      lat:39.4775,  lng:-92.0946,  yr:1835},
+    died:{city:"Redding, Connecticut, USA",   lat:41.3079,  lng:-73.4957,  yr:1910},
+    fact:"Author of The Adventures of Tom Sawyer and Huckleberry Finn; called the father of American literature." },
+
+  { name:"Marcel Proust",           cat:"Author",
+    born:{city:"Auteuil, France",             lat:48.8516,  lng:2.2672,    yr:1871},
+    died:{city:"Paris, France",               lat:48.8670,  lng:2.3500,    yr:1922},
+    fact:"Author of In Search of Lost Time, a monumental seven-volume novel exploring memory and the passage of time." },
+
+  { name:"James Joyce",             cat:"Author",
+    born:{city:"Dublin, Ireland",             lat:53.3498,  lng:-6.2603,   yr:1882},
+    died:{city:"Zürich, Switzerland",         lat:47.3769,  lng:8.5417,    yr:1941},
+    fact:"Revolutionary modernist author of Ulysses and Dubliners; transformed the possibilities of prose fiction." },
+
+  { name:"Honoré de Balzac",        cat:"Author",
+    born:{city:"Tours, France",               lat:47.3941,  lng:0.6848,    yr:1799},
+    died:{city:"Paris, France",               lat:48.8560,  lng:2.3400,    yr:1850},
+    fact:"Wrote nearly 100 linked novels in La Comédie humaine, a sweeping panorama of French society." },
+
+  { name:"Virginia Woolf",          cat:"Author",
+    born:{city:"London, England",             lat:51.5074,  lng:-0.1278,   yr:1882},
+    died:{city:"Rodmell, England",            lat:50.8662,  lng:0.0023,    yr:1941},
+    fact:"Pioneering modernist author of Mrs Dalloway and To the Lighthouse; influential feminist essayist." },
+
+  { name:"Henrik Ibsen",            cat:"Author",
+    born:{city:"Skien, Norway",               lat:59.2081,  lng:9.6086,    yr:1828},
+    died:{city:"Kristiania (Oslo), Norway",   lat:59.9139,  lng:10.7522,   yr:1906},
+    fact:"Father of modern drama; wrote A Doll's House and Hedda Gabler, transforming theatre worldwide." },
+
+  { name:"Gustave Flaubert",        cat:"Author",
+    born:{city:"Rouen, France",               lat:49.4432,  lng:1.0993,    yr:1821},
+    died:{city:"Croisset, France",            lat:49.4300,  lng:0.9650,    yr:1880},
+    fact:"Author of Madame Bovary, a landmark of realist fiction and one of the greatest novels ever written." },
+
+  { name:"William Blake",           cat:"Author",
+    born:{city:"London, England",             lat:51.5074,  lng:-0.1278,   yr:1757},
+    died:{city:"London, England",             lat:51.5120,  lng:-0.1510,   yr:1827},
+    fact:"Visionary Romantic poet and painter; wrote Songs of Innocence and Experience and illustrated his own prophecies." },
+
+  { name:"Rainer Maria Rilke",      cat:"Author",
+    born:{city:"Prague, Bohemia",             lat:50.0755,  lng:14.4378,   yr:1875},
+    died:{city:"Montreux, Switzerland",       lat:46.4312,  lng:6.9107,    yr:1926},
+    fact:"One of the greatest German-language poets; wrote the Duino Elegies and Letters to a Young Poet." },
+
+  { name:"Molière",                 cat:"Author",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1622},
+    died:{city:"Paris, France",               lat:48.8610,  lng:2.3560,    yr:1673},
+    fact:"France's greatest comic playwright; wrote Tartuffe and The Misanthrope; collapsed on stage and died the same night." },
+
+  { name:"Emily Brontë",            cat:"Author",
+    born:{city:"Thornton, England",           lat:53.8068,  lng:-1.8585,   yr:1818},
+    died:{city:"Haworth, England",            lat:53.8323,  lng:-1.9578,   yr:1848},
+    fact:"Author of Wuthering Heights, one of the most powerful and passionate novels in the English language." },
+
+  { name:"Rabindranath Tagore",     cat:"Author",
+    born:{city:"Calcutta, India",             lat:22.5726,  lng:88.3639,   yr:1861},
+    died:{city:"Calcutta, India",             lat:22.5800,  lng:88.3700,   yr:1941},
+    fact:"First non-European Nobel laureate in Literature; wrote Gitanjali and founded Visva-Bharati University." },
+
+  { name:"Virgil",                  cat:"Author",
+    born:{city:"Andes (near Mantua), Italy",  lat:45.1564,  lng:10.7910,   yr:-70},
+    died:{city:"Brindisi, Italy",             lat:40.6328,  lng:17.9467,   yr:-19},
+    fact:"Greatest Roman poet; wrote the Aeneid, the founding epic of Roman identity." },
+
+  { name:"Nikolai Gogol",           cat:"Author",
+    born:{city:"Sorochyntsi, Ukraine",        lat:50.0167,  lng:33.9833,   yr:1809},
+    died:{city:"Moscow, Russia",              lat:55.7558,  lng:37.6176,   yr:1852},
+    fact:"Author of Dead Souls and The Inspector General; a giant of Russian literature whose work satirised serfdom and corruption." },
+
+  { name:"Geoffrey Chaucer",        cat:"Author",
+    born:{city:"London, England",             lat:51.5074,  lng:-0.1278,   yr:1343},
+    died:{city:"London, England",             lat:51.5130,  lng:-0.1310,   yr:1400},
+    fact:"Father of English literature; wrote The Canterbury Tales, one of the earliest and greatest works in English." },
+
+  { name:"Giovanni Boccaccio",      cat:"Author",
+    born:{city:"Certaldo, Italy",             lat:43.5490,  lng:11.0427,   yr:1313},
+    died:{city:"Certaldo, Italy",             lat:43.5510,  lng:11.0450,   yr:1375},
+    fact:"Author of the Decameron, 100 tales framed by the Black Death; a pioneer of European prose fiction." },
+
+  // ── NEW POLITICIANS / LEADERS ───────────────
+  { name:"Nelson Mandela",          cat:"Politician",
+    born:{city:"Mvezo, South Africa",         lat:-31.5333, lng:28.3833,   yr:1918},
+    died:{city:"Johannesburg, South Africa",  lat:-26.2041, lng:28.0473,   yr:2013},
+    fact:"Led South Africa's fight against apartheid; became its first Black president after 27 years in prison." },
+
+  { name:"Joseph Stalin",           cat:"Politician",
+    born:{city:"Gori, Georgia",               lat:41.9851,  lng:44.1069,   yr:1878},
+    died:{city:"Moscow, Russia",              lat:55.7558,  lng:37.6176,   yr:1953},
+    fact:"Soviet dictator who led the USSR through industrialization and WWII but caused millions of deaths." },
+
+  { name:"Thomas Jefferson",        cat:"Politician",
+    born:{city:"Shadwell, Virginia, USA",     lat:38.0285,  lng:-78.4491,  yr:1743},
+    died:{city:"Monticello, Virginia, USA",   lat:38.0084,  lng:-78.4530,  yr:1826},
+    fact:"Principal author of the Declaration of Independence and 3rd President of the United States." },
+
+  { name:"Catherine the Great",     cat:"Politician",
+    born:{city:"Stettin (Szczecin), Poland",  lat:53.4285,  lng:14.5528,   yr:1729},
+    died:{city:"Saint Petersburg, Russia",    lat:59.9200,  lng:30.3400,   yr:1796},
+    fact:"Empress of Russia who modernized the country and expanded its territory more than any ruler since Peter the Great." },
+
+  { name:"Frederick the Great",     cat:"Politician",
+    born:{city:"Berlin, Germany",             lat:52.5200,  lng:13.4050,   yr:1712},
+    died:{city:"Potsdam, Germany",            lat:52.3906,  lng:13.0645,   yr:1786},
+    fact:"Philosopher-king who transformed Prussia into a major European power through military genius and enlightened rule." },
+
+  { name:"Queen Victoria",          cat:"Politician",
+    born:{city:"London, England",             lat:51.5099,  lng:-0.1559,   yr:1819},
+    died:{city:"Osborne House, England",      lat:50.7607,  lng:-1.2965,   yr:1901},
+    fact:"Reigned for 63 years; at her death the British Empire covered a quarter of the world's land area." },
+
+  { name:"Maximilien Robespierre",  cat:"Politician",
+    born:{city:"Arras, France",               lat:50.2916,  lng:2.7800,    yr:1758},
+    died:{city:"Paris, France",               lat:48.8580,  lng:2.3450,    yr:1794},
+    fact:"Architect of the Reign of Terror during the French Revolution; his own execution by guillotine ended it." },
+
+  { name:"Marcus Aurelius",         cat:"Politician",
+    born:{city:"Rome, Italy",                 lat:41.9028,  lng:12.4964,   yr:121},
+    died:{city:"Vindobona (Vienna), Austria", lat:48.2082,  lng:16.3738,   yr:180},
+    fact:"Roman Emperor and Stoic philosopher; wrote Meditations, one of the most widely read philosophical works ever." },
+
+  { name:"Richard I of England",    cat:"Politician",
+    born:{city:"Oxford, England",             lat:51.7520,  lng:-1.2577,   yr:1157},
+    died:{city:"Châlus, France",              lat:45.6450,  lng:0.9944,    yr:1199},
+    fact:"The Lionheart; led the Third Crusade and became one of the most celebrated warrior-kings of the Middle Ages." },
+
+  { name:"Tutankhamun",             cat:"Politician",
+    born:{city:"Amarna, Egypt",               lat:27.6437,  lng:30.8952,   yr:-1341},
+    died:{city:"Valley of the Kings, Egypt",  lat:25.7402,  lng:32.6014,   yr:-1323},
+    fact:"Egyptian pharaoh whose intact tomb, discovered in 1922, transformed our understanding of ancient Egypt." },
+
+  { name:"Mustafa Kemal Atatürk",   cat:"Politician",
+    born:{city:"Thessaloniki, Greece",        lat:40.6401,  lng:22.9444,   yr:1881},
+    died:{city:"Istanbul, Turkey",            lat:41.0082,  lng:28.9784,   yr:1938},
+    fact:"Founded the modern Republic of Turkey and transformed it with sweeping political and social reforms." },
+
+  { name:"Che Guevara",             cat:"Politician",
+    born:{city:"Rosario, Argentina",          lat:-32.9442, lng:-60.6505,  yr:1928},
+    died:{city:"La Higuera, Bolivia",         lat:-18.9000, lng:-64.2167,  yr:1967},
+    fact:"Marxist revolutionary who played a key role in the Cuban Revolution; became a global symbol of rebellion." },
+
+  { name:"Sun Yat-sen",             cat:"Politician",
+    born:{city:"Cuiheng, China",              lat:22.4100,  lng:113.4000,  yr:1866},
+    died:{city:"Beijing, China",              lat:39.9042,  lng:116.4074,  yr:1925},
+    fact:"First President of the Republic of China; called the 'Father of the Nation' in both China and Taiwan." },
+
+  { name:"Benito Mussolini",        cat:"Politician",
+    born:{city:"Predappio, Italy",            lat:44.1036,  lng:11.9797,   yr:1883},
+    died:{city:"Giulino di Mezzegra, Italy",  lat:45.9570,  lng:9.2140,    yr:1945},
+    fact:"Fascist dictator of Italy; his alliance with Hitler and ideology of fascism helped plunge Europe into World War II." },
+
+  { name:"Attila the Hun",          cat:"Politician",
+    born:{city:"Pannonia (Hungary)",          lat:47.4979,  lng:19.0402,   yr:406},
+    died:{city:"Pannonia (Hungary)",          lat:47.5200,  lng:19.1000,   yr:453},
+    fact:"Fearsome ruler of the Hunnic Empire who terrorized both the Western and Eastern Roman Empires across decades of raids." },
+
+  { name:"Ho Chi Minh",             cat:"Politician",
+    born:{city:"Nghe An, Vietnam",            lat:19.1606,  lng:104.9282,  yr:1890},
+    died:{city:"Hanoi, Vietnam",              lat:21.0285,  lng:105.8542,  yr:1969},
+    fact:"Vietnamese revolutionary who led the fight for independence against France and then the United States." },
+
+  { name:"Pericles",                cat:"Politician",
+    born:{city:"Athens, Greece",              lat:37.9838,  lng:23.7275,   yr:-495},
+    died:{city:"Athens, Greece",              lat:37.9900,  lng:23.7400,   yr:-429},
+    fact:"Golden Age statesman who oversaw the building of the Parthenon and made Athens the cultural centre of the world." },
+
+  // ── NEW EXPLORERS ───────────────────────────
+  { name:"Robert Falcon Scott",     cat:"Explorer",
+    born:{city:"Devonport, England",          lat:50.3742,  lng:-4.1427,   yr:1868},
+    died:{city:"Ross Ice Shelf, Antarctica",  lat:-81.6000, lng:-161.0000, yr:1912},
+    fact:"Led the ill-fated Terra Nova Expedition to the South Pole, arriving 34 days after Amundsen; died on the return journey." },
+
+  { name:"Vasco Núñez de Balboa",   cat:"Explorer",
+    born:{city:"Jerez de los Caballeros, Spain", lat:38.3240, lng:-6.7715, yr:1475},
+    died:{city:"Acla, Panama",                lat:9.1000,   lng:-78.0000,  yr:1519},
+    fact:"First European to see the Pacific Ocean from the Americas, claiming all its shores for the Spanish Crown." },
+
+  { name:"Walter Raleigh",          cat:"Explorer",
+    born:{city:"Hayes Barton, England",       lat:50.7250,  lng:-3.5167,   yr:1552},
+    died:{city:"London, England",             lat:51.5050,  lng:-0.1240,   yr:1618},
+    fact:"Courtier and explorer who attempted to colonize Virginia and led two expeditions searching for El Dorado." },
+
+  { name:"Samuel de Champlain",     cat:"Explorer",
+    born:{city:"Brouage, France",             lat:45.8623,  lng:-1.0583,   yr:1574},
+    died:{city:"Quebec City, Canada",         lat:46.8139,  lng:-71.2082,  yr:1635},
+    fact:"Father of New France; founded Quebec City and explored the Great Lakes and northeastern North America." },
+
+  { name:"Abel Tasman",             cat:"Explorer",
+    born:{city:"Lutjegast, Netherlands",      lat:53.2333,  lng:6.3667,    yr:1603},
+    died:{city:"Batavia (Jakarta), Indonesia",lat:-6.2088,  lng:106.8456,  yr:1659},
+    fact:"First European to reach New Zealand and Tasmania; circumnavigated Australia without recognising it as a single landmass." },
+
+  { name:"Juan Sebastián Elcano",   cat:"Explorer",
+    born:{city:"Getaria, Spain",              lat:43.2970,  lng:-2.2055,   yr:1476},
+    died:{city:"Pacific Ocean",               lat:5.0000,   lng:-156.0000, yr:1526},
+    fact:"First person to successfully circumnavigate the globe, completing Magellan's expedition after his captain was killed." },
+
+  { name:"Pedro Álvares Cabral",    cat:"Explorer",
+    born:{city:"Belmonte, Portugal",          lat:40.3522,  lng:-7.3428,   yr:1467},
+    died:{city:"Santarém, Portugal",          lat:39.2367,  lng:-8.6853,   yr:1520},
+    fact:"Portuguese explorer who accidentally discovered Brazil in 1500 while sailing to India around Africa." },
+
+  { name:"Mungo Park",              cat:"Explorer",
+    born:{city:"Foulshiels, Scotland",        lat:55.6122,  lng:-2.7881,   yr:1771},
+    died:{city:"Bussa, Nigeria",              lat:10.2000,  lng:4.5000,    yr:1806},
+    fact:"Pioneering explorer of the Niger River; disappeared while attempting to trace it to its mouth." },
+
+  { name:"George Vancouver",        cat:"Explorer",
+    born:{city:"King's Lynn, England",        lat:52.7522,  lng:0.4019,    yr:1757},
+    died:{city:"Petersham, England",          lat:51.4542,  lng:-0.3194,   yr:1798},
+    fact:"Mapped the Pacific Northwest coast of North America; the city of Vancouver bears his name." },
+
+  { name:"Matthew Flinders",        cat:"Explorer",
+    born:{city:"Donington, England",          lat:52.9024,  lng:-0.1988,   yr:1774},
+    died:{city:"London, England",             lat:51.5080,  lng:-0.1380,   yr:1814},
+    fact:"First to circumnavigate Australia and prove it was a single continent; proposed the name 'Australia'." },
+
+  { name:"Giovanni da Verrazzano",  cat:"Explorer",
+    born:{city:"Greve in Chianti, Italy",     lat:43.5858,  lng:11.3122,   yr:1485},
+    died:{city:"Caribbean (Lesser Antilles)", lat:16.2650,  lng:-61.5510,  yr:1528},
+    fact:"First European to explore the Atlantic coast of North America including what is now New York Harbor." },
+
+  { name:"Alexander von Humboldt",  cat:"Explorer",
+    born:{city:"Berlin, Germany",             lat:52.5200,  lng:13.4050,   yr:1769},
+    died:{city:"Berlin, Germany",             lat:52.5250,  lng:13.4100,   yr:1859},
+    fact:"Father of Physical Geography; his South American expedition laid the foundations for ecology and modern earth science." },
+
+  { name:"Meriwether Lewis",        cat:"Explorer",
+    born:{city:"Albemarle County, USA",       lat:38.0297,  lng:-78.4775,  yr:1774},
+    died:{city:"Grinder's Stand, USA",        lat:35.1170,  lng:-87.7160,  yr:1809},
+    fact:"Led the Corps of Discovery with William Clark across North America to the Pacific, mapping the western continent." },
+
+  { name:"Fridtjof Nansen",         cat:"Explorer",
+    born:{city:"Store Frøen, Norway",         lat:59.9500,  lng:10.7500,   yr:1861},
+    died:{city:"Lysaker, Norway",             lat:59.9060,  lng:10.6295,   yr:1930},
+    fact:"First to cross Greenland on skis; reached a record northern latitude; later won the Nobel Peace Prize." },
+
+  { name:"Jacques Cartier",         cat:"Explorer",
+    born:{city:"Saint-Malo, France",          lat:48.6493,  lng:-2.0095,   yr:1491},
+    died:{city:"Saint-Malo, France",          lat:48.6510,  lng:-2.0110,   yr:1557},
+    fact:"Explored the Gulf of St. Lawrence and claimed Canada for France; his voyages opened the continent to colonisation." },
+
+  { name:"Robert Peary",            cat:"Explorer",
+    born:{city:"Cresson, Pennsylvania, USA",  lat:40.4618,  lng:-78.5886,  yr:1856},
+    died:{city:"Washington DC, USA",          lat:38.9072,  lng:-77.0369,  yr:1920},
+    fact:"Claimed to be the first person to reach the North Pole in 1909, a feat that remains debated by historians." },
+
+  { name:"Sven Hedin",              cat:"Explorer",
+    born:{city:"Stockholm, Sweden",           lat:59.3293,  lng:18.0686,   yr:1865},
+    died:{city:"Stockholm, Sweden",           lat:59.3350,  lng:18.0750,   yr:1952},
+    fact:"Prolific explorer of Central Asia and Tibet who mapped vast uncharted regions along the ancient Silk Road." },
+
+  // ── NEW MUSICIANS / COMPOSERS ───────────────
+  { name:"Sergei Rachmaninoff",     cat:"Composer",
+    born:{city:"Novgorod region, Russia",     lat:58.0000,  lng:32.5000,   yr:1873},
+    died:{city:"Beverly Hills, USA",          lat:34.0736,  lng:-118.4004, yr:1943},
+    fact:"Romantic composer and virtuoso pianist; his Piano Concerto No. 2 is among the most beloved ever written." },
+
+  { name:"Claude Debussy",          cat:"Composer",
+    born:{city:"Saint-Germain-en-Laye, France", lat:48.8990, lng:2.0940,  yr:1862},
+    died:{city:"Paris, France",               lat:48.8680,  lng:2.3500,    yr:1918},
+    fact:"Founded Impressionist music; works like Clair de Lune and La Mer transformed the sound of Western music." },
+
+  { name:"Igor Stravinsky",         cat:"Composer",
+    born:{city:"Oranienbaum, Russia",         lat:59.9104,  lng:29.7677,   yr:1882},
+    died:{city:"New York City, USA",          lat:40.7128,  lng:-74.0060,  yr:1971},
+    fact:"His Rite of Spring caused a riot at its premiere; he reinvented his style multiple times across six decades." },
+
+  { name:"Giacomo Puccini",         cat:"Composer",
+    born:{city:"Lucca, Italy",                lat:43.8430,  lng:10.5080,   yr:1858},
+    died:{city:"Brussels, Belgium",           lat:50.8503,  lng:4.3517,    yr:1924},
+    fact:"Master of verismo opera; composed La Bohème, Tosca, and Madama Butterfly, loved worldwide for emotional power." },
+
+  { name:"Edvard Grieg",            cat:"Composer",
+    born:{city:"Bergen, Norway",              lat:60.3913,  lng:5.3221,    yr:1843},
+    died:{city:"Bergen, Norway",              lat:60.4000,  lng:5.3500,    yr:1907},
+    fact:"Norway's greatest composer; wrote the Peer Gynt Suite and the beloved Piano Concerto in A minor." },
+
+  { name:"Dmitri Shostakovich",     cat:"Composer",
+    born:{city:"Saint Petersburg, Russia",    lat:59.9311,  lng:30.3609,   yr:1906},
+    died:{city:"Moscow, Russia",              lat:55.7558,  lng:37.6176,   yr:1975},
+    fact:"Soviet composer who survived Stalin's purges; his symphonies are considered among the greatest of the 20th century." },
+
+  { name:"Antonín Dvořák",          cat:"Composer",
+    born:{city:"Nelahozeves, Czech Republic", lat:50.2833,  lng:14.3000,   yr:1841},
+    died:{city:"Prague, Czech Republic",      lat:50.0800,  lng:14.4350,   yr:1904},
+    fact:"Composed the New World Symphony after visiting America; a founding voice of Czech national music." },
+
+  { name:"Maurice Ravel",           cat:"Composer",
+    born:{city:"Ciboure, France",             lat:43.3878,  lng:-1.6735,   yr:1875},
+    died:{city:"Paris, France",               lat:48.8600,  lng:2.3500,    yr:1937},
+    fact:"Composed Bolero, one of the most recognisable pieces in classical music; a master of orchestral colour." },
+
+  { name:"George Gershwin",         cat:"Composer",
+    born:{city:"Brooklyn, USA",               lat:40.6782,  lng:-73.9442,  yr:1898},
+    died:{city:"Los Angeles, USA",            lat:34.0522,  lng:-118.2437, yr:1937},
+    fact:"Bridged classical and jazz; composed Rhapsody in Blue and the opera Porgy and Bess." },
+
+  { name:"Gustav Mahler",           cat:"Composer",
+    born:{city:"Kaliště, Bohemia",            lat:49.5347,  lng:15.5667,   yr:1860},
+    died:{city:"Vienna, Austria",             lat:48.2082,  lng:16.3738,   yr:1911},
+    fact:"Composed nine vast symphonies exploring the full range of human experience; hugely influential on modern music." },
+
+  { name:"Niccolò Paganini",        cat:"Composer",
+    born:{city:"Genoa, Italy",                lat:44.4056,  lng:8.9463,    yr:1782},
+    died:{city:"Nice, France",                lat:43.7102,  lng:7.2620,    yr:1840},
+    fact:"Greatest violin virtuoso of his age; his 24 Caprices remain among the most technically demanding pieces ever written." },
+
+  { name:"Gioachino Rossini",       cat:"Composer",
+    born:{city:"Pesaro, Italy",               lat:43.9108,  lng:12.9138,   yr:1792},
+    died:{city:"Paris, France",               lat:48.8670,  lng:2.3500,    yr:1868},
+    fact:"Wrote The Barber of Seville and William Tell; his overtures are instantly recognisable worldwide." },
+
+  { name:"Béla Bartók",             cat:"Composer",
+    born:{city:"Nagyszentmiklós (Romania)",   lat:46.0800,  lng:20.6333,   yr:1881},
+    died:{city:"New York City, USA",          lat:40.7128,  lng:-74.0060,  yr:1945},
+    fact:"Combined Hungarian folk music with modernism; wrote 6 string quartets and a landmark Concerto for Orchestra." },
+
+  { name:"Scott Joplin",            cat:"Composer",
+    born:{city:"Texarkana, USA",              lat:33.4418,  lng:-94.0477,  yr:1868},
+    died:{city:"New York City, USA",          lat:40.7200,  lng:-74.0100,  yr:1917},
+    fact:"King of Ragtime; composed Maple Leaf Rag and The Entertainer; posthumously awarded a Pulitzer Prize." },
+
+  { name:"Domenico Scarlatti",      cat:"Composer",
+    born:{city:"Naples, Italy",               lat:40.8518,  lng:14.2681,   yr:1685},
+    died:{city:"Madrid, Spain",               lat:40.4168,  lng:-3.7038,   yr:1757},
+    fact:"Baroque composer known for 555 inventive keyboard sonatas that profoundly influenced later keyboard writing." },
+
+  { name:"Jean-Baptiste Lully",     cat:"Composer",
+    born:{city:"Florence, Italy",             lat:43.7696,  lng:11.2558,   yr:1632},
+    died:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1687},
+    fact:"Founder of French opera; accidentally killed himself by striking his foot while conducting a Te Deum." },
+
+  { name:"Nikolai Rimsky-Korsakov", cat:"Composer",
+    born:{city:"Tikhvin, Russia",             lat:59.6460,  lng:33.5290,   yr:1844},
+    died:{city:"Lyubensk, Russia",            lat:59.4500,  lng:30.4600,   yr:1908},
+    fact:"Russian nationalist composer of Scheherazade and Flight of the Bumblebee; a brilliant orchestrator and gifted teacher." },
+
+  // ── NEW PHILOSOPHERS ────────────────────────
+  { name:"Francis Bacon",           cat:"Philosopher",
+    born:{city:"London, England",             lat:51.5140,  lng:-0.1220,   yr:1561},
+    died:{city:"London, England",             lat:51.5074,  lng:-0.1400,   yr:1626},
+    fact:"Father of empiricism and the scientific method; argued that knowledge must come from systematic observation." },
+
+  { name:"Gottfried Wilhelm Leibniz", cat:"Philosopher",
+    born:{city:"Leipzig, Germany",            lat:51.3397,  lng:12.3731,   yr:1646},
+    died:{city:"Hannover, Germany",           lat:52.3759,  lng:9.7320,    yr:1716},
+    fact:"Co-invented calculus independently of Newton; developed monadology and the concept of possible worlds." },
+
+  { name:"Søren Kierkegaard",       cat:"Philosopher",
+    born:{city:"Copenhagen, Denmark",         lat:55.6761,  lng:12.5683,   yr:1813},
+    died:{city:"Copenhagen, Denmark",         lat:55.6850,  lng:12.5950,   yr:1855},
+    fact:"Father of existentialism; explored concepts of anxiety, despair, and the individual's relationship with God." },
+
+  { name:"Albert Camus",            cat:"Philosopher",
+    born:{city:"Dréan, Algeria",              lat:36.6800,  lng:7.7500,    yr:1913},
+    died:{city:"Villeblevin, France",         lat:48.1833,  lng:3.2167,    yr:1960},
+    fact:"Absurdist philosopher and Nobel laureate; wrote The Stranger and The Myth of Sisyphus." },
+
+  { name:"Ludwig Wittgenstein",     cat:"Philosopher",
+    born:{city:"Vienna, Austria",             lat:48.2082,  lng:16.3738,   yr:1889},
+    died:{city:"Cambridge, England",          lat:52.2053,  lng:0.1218,    yr:1951},
+    fact:"One of the most influential philosophers of the 20th century; transformed the philosophy of language twice over." },
+
+  { name:"Bertrand Russell",        cat:"Philosopher",
+    born:{city:"Trellech, Wales",             lat:51.7667,  lng:-2.7167,   yr:1872},
+    died:{city:"Penrhyndeudraeth, Wales",     lat:52.9333,  lng:-4.0833,   yr:1970},
+    fact:"Nobel laureate who co-wrote Principia Mathematica; championed nuclear disarmament and civil liberties." },
+
+  { name:"Thomas Aquinas",          cat:"Philosopher",
+    born:{city:"Roccasecca, Italy",           lat:41.5667,  lng:13.6667,   yr:1225},
+    died:{city:"Fossanova, Italy",            lat:41.4500,  lng:13.2333,   yr:1274},
+    fact:"Synthesised Christian theology with Aristotelian philosophy in his Summa Theologica, shaping Catholic thought." },
+
+  { name:"Epicurus",                cat:"Philosopher",
+    born:{city:"Samos, Greece",               lat:37.7500,  lng:26.9833,   yr:-341},
+    died:{city:"Athens, Greece",              lat:37.9838,  lng:23.7275,   yr:-270},
+    fact:"Taught that the goal of life is happiness through simple pleasures, friendship, and freedom from fear and pain." },
+
+  { name:"Auguste Comte",           cat:"Philosopher",
+    born:{city:"Montpellier, France",         lat:43.6108,  lng:3.8767,    yr:1798},
+    died:{city:"Paris, France",               lat:48.8610,  lng:2.3500,    yr:1857},
+    fact:"Founded the philosophy of positivism and established sociology as a formal academic discipline." },
+
+  { name:"Michel de Montaigne",     cat:"Philosopher",
+    born:{city:"Périgord, France",            lat:44.9100,  lng:0.5100,    yr:1533},
+    died:{city:"Périgord, France",            lat:44.9150,  lng:0.5150,    yr:1592},
+    fact:"Invented the personal essay; his Essais pioneered introspective writing and influenced thinkers for centuries." },
+
+  { name:"Jeremy Bentham",          cat:"Philosopher",
+    born:{city:"London, England",             lat:51.5140,  lng:-0.1220,   yr:1748},
+    died:{city:"London, England",             lat:51.5050,  lng:-0.1350,   yr:1832},
+    fact:"Founded utilitarianism, arguing that the goal of morality is the greatest happiness of the greatest number." },
+
+  { name:"Avicenna (Ibn Sina)",     cat:"Philosopher",
+    born:{city:"Afshana, Uzbekistan",         lat:40.1123,  lng:63.5781,   yr:980},
+    died:{city:"Hamadan, Iran",               lat:34.7985,  lng:48.5146,   yr:1037},
+    fact:"Islamic polymath whose Canon of Medicine was used in universities for 600 years; wrote on virtually every subject." },
+
+  { name:"Martin Heidegger",        cat:"Philosopher",
+    born:{city:"Meßkirch, Germany",           lat:47.9916,  lng:9.1168,    yr:1889},
+    died:{city:"Freiburg, Germany",           lat:47.9990,  lng:7.8421,    yr:1976},
+    fact:"Wrote Being and Time; one of the most influential and controversial philosophers of the 20th century." },
+
+  { name:"William James",           cat:"Philosopher",
+    born:{city:"New York City, USA",          lat:40.7128,  lng:-74.0060,  yr:1842},
+    died:{city:"Chocorua, USA",               lat:43.9654,  lng:-71.2862,  yr:1910},
+    fact:"Father of American psychology and founder of pragmatism; wrote The Varieties of Religious Experience." },
+
+  { name:"Jean-Paul Sartre",        cat:"Philosopher",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1905},
+    died:{city:"Paris, France",               lat:48.8640,  lng:2.3500,    yr:1980},
+    fact:"Leading existentialist philosopher and novelist; wrote Being and Nothingness and the play No Exit." },
+
+  // ── NEW VISUAL ARTISTS ──────────────────────
+  { name:"Vincent van Gogh",        cat:"Artist",
+    born:{city:"Zundert, Netherlands",        lat:51.4742,  lng:4.6556,    yr:1853},
+    died:{city:"Auvers-sur-Oise, France",     lat:49.0713,  lng:2.1720,    yr:1890},
+    fact:"Post-Impressionist who created over 2,100 works including Starry Night; sold only one painting in his lifetime." },
+
+  { name:"Salvador Dalí",           cat:"Artist",
+    born:{city:"Figueres, Spain",             lat:42.2678,  lng:2.9608,    yr:1904},
+    died:{city:"Figueres, Spain",             lat:42.2750,  lng:2.9630,    yr:1989},
+    fact:"Surrealist master known for melting clocks in The Persistence of Memory; one of the most recognisable artists of the 20th century." },
+
+  { name:"Claude Monet",            cat:"Artist",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1840},
+    died:{city:"Giverny, France",             lat:49.0771,  lng:1.5314,    yr:1926},
+    fact:"Founder of Impressionism; created the Water Lilies series and gave the movement its name." },
+
+  { name:"Raphael",                 cat:"Artist",
+    born:{city:"Urbino, Italy",               lat:43.7228,  lng:12.6357,   yr:1483},
+    died:{city:"Rome, Italy",                 lat:41.9100,  lng:12.4800,   yr:1520},
+    fact:"High Renaissance master whose School of Athens and Sistine Madonna represent the pinnacle of classical harmony." },
+
+  { name:"Caravaggio",              cat:"Artist",
+    born:{city:"Milan, Italy",                lat:45.4654,  lng:9.1859,    yr:1571},
+    died:{city:"Porto Ercole, Italy",         lat:42.3917,  lng:11.1508,   yr:1610},
+    fact:"Baroque pioneer of dramatic chiaroscuro; his revolutionary naturalism permanently transformed Western painting." },
+
+  { name:"Auguste Rodin",           cat:"Artist",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1840},
+    died:{city:"Meudon, France",              lat:48.8106,  lng:2.2358,    yr:1917},
+    fact:"Greatest sculptor of the modern era; created The Thinker, The Kiss, and The Gates of Hell." },
+
+  { name:"Henri Matisse",           cat:"Artist",
+    born:{city:"Le Cateau-Cambrésis, France", lat:50.1082,  lng:3.5480,    yr:1869},
+    died:{city:"Nice, France",                lat:43.7102,  lng:7.2620,    yr:1954},
+    fact:"Leader of Fauvism and master of colour; created vibrant paper cut-outs in his final years." },
+
+  { name:"Édouard Manet",           cat:"Artist",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1832},
+    died:{city:"Paris, France",               lat:48.8650,  lng:2.3400,    yr:1883},
+    fact:"Pioneer of modern art whose Luncheon on the Grass shocked Paris in 1863, paving the way for Impressionism." },
+
+  { name:"Francisco Goya",          cat:"Artist",
+    born:{city:"Fuendetodos, Spain",          lat:41.3681,  lng:-0.9742,   yr:1746},
+    died:{city:"Bordeaux, France",            lat:44.8378,  lng:-0.5792,   yr:1828},
+    fact:"Spanish master who documented the horrors of war in The Third of May 1808; his haunting Black Paintings are unlike any other art." },
+
+  { name:"El Greco",                cat:"Artist",
+    born:{city:"Heraklion, Crete, Greece",    lat:35.3388,  lng:25.1442,   yr:1541},
+    died:{city:"Toledo, Spain",               lat:39.8628,  lng:-4.0273,   yr:1614},
+    fact:"Mannerist painter whose elongated figures and intense colours made him a forerunner of Expressionism and Cubism." },
+
+  { name:"Peter Paul Rubens",       cat:"Artist",
+    born:{city:"Siegen, Germany",             lat:50.8742,  lng:8.0232,    yr:1577},
+    died:{city:"Antwerp, Belgium",            lat:51.2194,  lng:4.4025,    yr:1640},
+    fact:"Baroque master of dynamic compositions and sensuous colour; the dominant northern European artist of the 17th century." },
+
+  { name:"Diego Velázquez",         cat:"Artist",
+    born:{city:"Seville, Spain",              lat:37.3891,  lng:-5.9845,   yr:1599},
+    died:{city:"Madrid, Spain",               lat:40.4200,  lng:-3.7050,   yr:1660},
+    fact:"Court painter to the Spanish Crown; Las Meninas is considered one of the most analysed paintings in history." },
+
+  { name:"Jan Vermeer",             cat:"Artist",
+    born:{city:"Delft, Netherlands",          lat:52.0116,  lng:4.3571,    yr:1632},
+    died:{city:"Delft, Netherlands",          lat:52.0150,  lng:4.3620,    yr:1675},
+    fact:"Dutch Golden Age master of light and domestic interiors; Girl with a Pearl Earring is one of the most famous portraits ever." },
+
+  { name:"Paul Cézanne",            cat:"Artist",
+    born:{city:"Aix-en-Provence, France",     lat:43.5297,  lng:5.4474,    yr:1839},
+    died:{city:"Aix-en-Provence, France",     lat:43.5350,  lng:5.4520,    yr:1906},
+    fact:"Post-Impressionist whose structured approach to form and colour laid the direct foundations of Cubism." },
+
+  { name:"Paul Gauguin",            cat:"Artist",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1848},
+    died:{city:"Hiva Oa, French Polynesia",   lat:-9.7787,  lng:-139.0233, yr:1903},
+    fact:"Abandoned European life for Tahiti; his vivid tropical paintings of Polynesian life profoundly shaped modernism." },
+
+  { name:"J.M.W. Turner",           cat:"Artist",
+    born:{city:"London, England",             lat:51.5074,  lng:-0.1278,   yr:1775},
+    died:{city:"London, England",             lat:51.4850,  lng:-0.1720,   yr:1851},
+    fact:"England's greatest landscape painter; his atmospheric depictions of light and sea prefigured Impressionism by decades." },
+
+  { name:"Albrecht Dürer",          cat:"Artist",
+    born:{city:"Nuremberg, Germany",          lat:49.4521,  lng:11.0767,   yr:1471},
+    died:{city:"Nuremberg, Germany",          lat:49.4560,  lng:11.0810,   yr:1528},
+    fact:"Greatest German Renaissance artist; his prints and engravings disseminated new artistic ideas across northern Europe." },
+
+  { name:"Hieronymus Bosch",        cat:"Artist",
+    born:{city:"'s-Hertogenbosch, Netherlands", lat:51.6978, lng:5.3037,  yr:1450},
+    died:{city:"'s-Hertogenbosch, Netherlands", lat:51.7000, lng:5.3100,  yr:1516},
+    fact:"Visionary Dutch painter whose nightmarish triptychs, including The Garden of Earthly Delights, remain utterly unique in art." },
+
+  { name:"Sandro Botticelli",       cat:"Artist",
+    born:{city:"Florence, Italy",             lat:43.7696,  lng:11.2558,   yr:1445},
+    died:{city:"Florence, Italy",             lat:43.7750,  lng:11.2600,   yr:1510},
+    fact:"Renaissance painter celebrated for The Birth of Venus and Primavera, two of the most iconic works in Western art." },
+
+  { name:"Titian",                  cat:"Artist",
+    born:{city:"Pieve di Cadore, Italy",      lat:46.4312,  lng:12.3665,   yr:1488},
+    died:{city:"Venice, Italy",               lat:45.4450,  lng:12.3200,   yr:1576},
+    fact:"Greatest Venetian painter and master of colour; his influence on European painting across four centuries is incalculable." },
+
+  { name:"Wassily Kandinsky",       cat:"Artist",
+    born:{city:"Moscow, Russia",              lat:55.7558,  lng:37.6176,   yr:1866},
+    died:{city:"Neuilly-sur-Seine, France",   lat:48.8849,  lng:2.2640,    yr:1944},
+    fact:"Pioneer of pure abstract art; his Composition VII is considered one of the most complex paintings ever created." },
+
+  { name:"Edvard Munch",            cat:"Artist",
+    born:{city:"Løten, Norway",               lat:60.8198,  lng:11.3443,   yr:1863},
+    died:{city:"Ekely, Norway",               lat:59.9500,  lng:10.6500,   yr:1944},
+    fact:"Norwegian Expressionist; The Scream is one of the most recognisable and reproduced works in all of art history." },
+
+  { name:"Gustav Klimt",            cat:"Artist",
+    born:{city:"Baumgarten, Austria",         lat:48.1920,  lng:16.2730,   yr:1862},
+    died:{city:"Vienna, Austria",             lat:48.2082,  lng:16.3738,   yr:1918},
+    fact:"Art Nouveau master; The Kiss is among the most romantic and celebrated paintings in the world." },
+
+  { name:"Frida Kahlo",             cat:"Artist",
+    born:{city:"Coyoacán, Mexico",            lat:19.3500,  lng:-99.1628,  yr:1907},
+    died:{city:"Coyoacán, Mexico",            lat:19.3520,  lng:-99.1610,  yr:1954},
+    fact:"Mexican painter celebrated for vivid self-portraits exploring identity and pain; a global feminist icon." },
+
+  { name:"Jackson Pollock",         cat:"Artist",
+    born:{city:"Cody, Wyoming, USA",          lat:44.5263,  lng:-109.0565, yr:1912},
+    died:{city:"East Hampton, USA",           lat:40.9634,  lng:-72.1843,  yr:1956},
+    fact:"Pioneer of Abstract Expressionism; his revolutionary drip-painting technique transformed post-war art." },
+
+  { name:"Marc Chagall",            cat:"Artist",
+    born:{city:"Vitebsk, Belarus",            lat:55.1904,  lng:30.2049,   yr:1887},
+    died:{city:"Saint-Paul-de-Vence, France", lat:43.6977,  lng:7.1202,    yr:1985},
+    fact:"Russian-French modernist whose dreamlike, colourful paintings blend folklore, religion, and fantasy." },
+
+  { name:"Paul Klee",               cat:"Artist",
+    born:{city:"Münchenbuchsee, Switzerland", lat:46.9864,  lng:7.4580,    yr:1879},
+    died:{city:"Muralto, Switzerland",        lat:46.1726,  lng:8.7945,    yr:1940},
+    fact:"Swiss-German Bauhaus master whose witty, poetic works defy classification between Expressionism and Surrealism." },
+
+  { name:"Georges Seurat",          cat:"Artist",
+    born:{city:"Paris, France",               lat:48.8566,  lng:2.3522,    yr:1859},
+    died:{city:"Paris, France",               lat:48.8700,  lng:2.3600,    yr:1891},
+    fact:"Inventor of Pointillism; A Sunday on La Grande Jatte used thousands of tiny colour dots to create a shimmering scene." },
+
+  { name:"René Magritte",           cat:"Artist",
+    born:{city:"Lessines, Belgium",           lat:50.7128,  lng:3.8338,    yr:1898},
+    died:{city:"Brussels, Belgium",           lat:50.8503,  lng:4.3517,    yr:1967},
+    fact:"Surrealist philosopher-painter; The Treachery of Images and The Son of Man made ordinary objects strange and thought-provoking." },
+
+  { name:"Egon Schiele",            cat:"Artist",
+    born:{city:"Tulln, Austria",              lat:48.3297,  lng:16.0564,   yr:1890},
+    died:{city:"Vienna, Austria",             lat:48.2150,  lng:16.3800,   yr:1918},
+    fact:"Austrian Expressionist known for raw, intense figurative works; died at 28 from the Spanish flu, three days after his pregnant wife." },
+
+  // ── NEW AUTHORS ─────────────────────────────
+  { name:"Homer",                   cat:"Author",
+    born:{city:"Smyrna (İzmir), Turkey",      lat:38.4192,  lng:27.1287,   yr:-800},
+    died:{city:"Ios, Greece",                 lat:36.7220,  lng:25.2880,   yr:-701},
+    fact:"Legendary ancient Greek poet credited with the Iliad and the Odyssey, the founding epics of Western literature." },
+
+  { name:"John Steinbeck",          cat:"Author",
+    born:{city:"Salinas, California, USA",    lat:36.6777,  lng:-121.6555, yr:1902},
+    died:{city:"New York City, USA",          lat:40.7128,  lng:-74.0060,  yr:1968},
+    fact:"Nobel laureate who gave voice to the dispossessed in The Grapes of Wrath and Of Mice and Men." },
+
+  { name:"Gabriel García Márquez",  cat:"Author",
+    born:{city:"Aracataca, Colombia",         lat:10.5984,  lng:-74.1879,  yr:1927},
+    died:{city:"Mexico City, Mexico",         lat:19.4326,  lng:-99.1332,  yr:2014},
+    fact:"Colombian Nobel laureate who pioneered Magical Realism; One Hundred Years of Solitude is one of the greatest novels ever written." },
+
+  { name:"Jorge Luis Borges",       cat:"Author",
+    born:{city:"Buenos Aires, Argentina",     lat:-34.6037, lng:-58.3816,  yr:1899},
+    died:{city:"Geneva, Switzerland",         lat:46.2044,  lng:6.1432,    yr:1986},
+    fact:"Argentine master of the short story whose labyrinths and fantastical fictions invented a wholly new kind of literature." },
+];
+
+// ─────────────────────────────────────────────
+//  CATEGORY STYLES
+// ─────────────────────────────────────────────
+const CAT = {
+  Scientist:  { color:"#06b6d4", bg:"rgba(6,182,212,.12)",   icon:"🔬" },
+  Artist:     { color:"#f59e0b", bg:"rgba(245,158,11,.12)",  icon:"🎨" },
+  Author:     { color:"#fb7185", bg:"rgba(251,113,133,.12)", icon:"📖" },
+  Politician: { color:"#a78bfa", bg:"rgba(167,139,250,.12)", icon:"⚔️"  },
+  Explorer:   { color:"#fb923c", bg:"rgba(251,146,60,.12)",  icon:"🧭" },
+  Composer:   { color:"#f472b6", bg:"rgba(244,114,182,.12)", icon:"🎵" },
+  Philosopher:{ color:"#2dd4bf", bg:"rgba(45,212,191,.12)",  icon:"📜" },
+};
+
+// ─────────────────────────────────────────────
+//  QUIZ STATE
+// ─────────────────────────────────────────────
+const ROUND_SIZE = 12;
+let questions  = [];   // shuffled subset
+let current    = 0;
+let score      = 0;
+let history    = [];   // { person, chosen, correct }
+let answered   = false;
+let options    = [];   // [person, ...]  length 4
+
+// ─────────────────────────────────────────────
+//  MAP
+// ─────────────────────────────────────────────
+let map, bMarker, dMarker;
+
+function initMap() {
+  map = L.map("map", {
+    center: [20, 15], zoom: 2,
+    zoomControl: true,
+    attributionControl: false,
+  });
+
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    subdomains: "abcd", maxZoom: 18,
+  }).addTo(map);
+
+  L.control.attribution({ prefix: false })
+    .addAttribution('© <a href="https://carto.com/">CARTO</a> | © <a href="https://openstreetmap.org">OSM</a>')
+    .addTo(map);
+}
+
+function makeIcon(type) {
+  const cls = type === "birth" ? "p-green p-dot" : "p-red p-dot";
+  const rcls = type === "birth" ? "p-green-ring p-ring" : "p-red-ring p-ring";
+  return L.divIcon({
+    className: "",
+    html: `<div class="pulse-marker"><div class="${cls}"></div><div class="${rcls}"></div></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    popupAnchor: [0, -12],
+  });
+}
+
+function placeMarkers(person) {
+  if (bMarker) { bMarker.remove(); bMarker = null; }
+  if (dMarker) { dMarker.remove(); dMarker = null; }
+
+  const b = person.born, d = person.died;
+  const samePlace = Math.abs(b.lat - d.lat) < 0.15 && Math.abs(b.lng - d.lng) < 0.15;
+
+  if (samePlace) {
+    // Single marker pulsing green → red to show born & died in same city
+    const dualIcon = L.divIcon({
+      className: "",
+      html: `<div class="pulse-marker"><div class="dual-dot"></div><div class="dual-ring"></div></div>`,
+      iconSize: [14, 14], iconAnchor: [7, 7], tooltipAnchor: [0, -12],
+    });
+    bMarker = L.marker([b.lat, b.lng], { icon: dualIcon }).addTo(map);
+    bMarker.bindTooltip(
+      `<b>Born &amp; Died here</b><br>${b.city}<br>` +
+      `<i>Born ${formatYear(b.yr)} · Died ${formatYear(d.yr)}</i>`,
+      { permanent: true, direction: "top" }
+    );
+    map.setView([b.lat, b.lng], 6);
+  } else {
+    bMarker = L.marker([b.lat, b.lng], { icon: makeIcon("birth") }).addTo(map);
+    dMarker = L.marker([d.lat, d.lng], { icon: makeIcon("death") }).addTo(map);
+
+    // Point each tooltip away from the other marker so they never overlap.
+    // Prefer the vertical (lat) axis; fall back to horizontal when markers
+    // are nearly on the same latitude line.
+    const latDiff = b.lat - d.lat;
+    const lngDiff = b.lng - d.lng;
+    let bDir, dDir;
+    if (Math.abs(latDiff) >= 2) {
+      bDir = latDiff > 0 ? "top" : "bottom";
+      dDir = latDiff > 0 ? "bottom" : "top";
+    } else {
+      bDir = lngDiff < 0 ? "right" : "left";
+      dDir = lngDiff < 0 ? "left" : "right";
+    }
+
+    bMarker.bindTooltip(`<b>Birthplace</b><br>${b.city}<br><i>${formatYear(b.yr)}</i>`, { permanent: true, direction: bDir });
+    dMarker.bindTooltip(`<b>Death place</b><br>${d.city}<br><i>${formatYear(d.yr)}</i>`, { permanent: true, direction: dDir });
+
+    const bounds = L.latLngBounds([[b.lat, b.lng], [d.lat, d.lng]]);
+    // Extra padding gives tooltip labels room so they don't get clipped at the map edge.
+    // Vertical padding (100 px) > tooltip height (~65 px); horizontal (80 px) > tooltip width.
+    map.fitBounds(bounds, { padding: [100, 80], maxZoom: 8 });
+  }
+}
+
+function lockMap() {
+  map.dragging.disable();
+  map.touchZoom.disable();
+  map.doubleClickZoom.disable();
+  map.scrollWheelZoom.disable();
+  map.keyboard.disable();
+  map.boxZoom.disable();
+}
+
+function unlockMap() {
+  map.dragging.enable();
+  map.touchZoom.enable();
+  map.doubleClickZoom.enable();
+  map.scrollWheelZoom.enable();
+  map.keyboard.enable();
+  map.boxZoom.enable();
+}
+
+// ─────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function formatYear(yr) {
+  if (yr < 0) return `${Math.abs(yr)} BC`;
+  return String(yr);
+}
+
+function eraHint(yr) {
+  if (yr < -500)  return `Born c.${Math.abs(yr)} BC`;
+  if (yr < 0)     return `Born ${Math.abs(yr)} BC`;
+  if (yr < 1000)  return `Born ${yr} AD`;
+  const dec = Math.floor(yr / 10) * 10;
+  return `Born in the ${dec}s`;
+}
+
+// Generate 4 options: 1 correct + 3 weighted wrong
+function generateOptions(correct, pool) {
+  const others = pool.filter(p => p.name !== correct.name);
+  const scored = others.map(p => ({
+    p,
+    s: (p.cat === correct.cat ? 2 : 0) +
+       (Math.abs(p.born.yr - correct.born.yr) < 150 ? 1 : 0) +
+       Math.random() * 1.2,
+  }));
+  scored.sort((a, b) => b.s - a.s);
+  const wrongs = scored.slice(0, 3).map(x => x.p);
+  return shuffle([correct, ...wrongs]);
+}
+
+// ─────────────────────────────────────────────
+//  QUIZ FLOW
+// ─────────────────────────────────────────────
+function startQuiz() {
+  questions = shuffle(PEOPLE).slice(0, ROUND_SIZE);
+  current = 0; score = 0; history = [];
+  show("quiz-screen");
+  // Map div must be visible before Leaflet can measure it.
+  // Delay showQuestion until after initMap() has run.
+  if (!map) {
+    setTimeout(() => { initMap(); showQuestion(); }, 60);
+  } else {
+    map.invalidateSize();
+    showQuestion();
+  }
+}
+
+function showQuestion() {
+  answered = false;
+  const person = questions[current];
+  options = generateOptions(person, PEOPLE);
+
+  // Header
+  document.getElementById("progress-text").textContent = `${current + 1} / ${ROUND_SIZE}`;
+  document.getElementById("progress-bar").style.width = `${(current / ROUND_SIZE) * 100}%`;
+  document.getElementById("score-display").textContent = `Score: ${score}`;
+
+  // Clue
+  const cs = CAT[person.cat];
+  const badge = document.getElementById("cat-badge");
+  badge.textContent = `${cs.icon} ${person.cat}`;
+  badge.style.color = cs.color;
+  badge.style.borderColor = cs.color;
+  badge.style.background = cs.bg;
+  document.getElementById("era-hint").textContent = eraHint(person.born.yr);
+
+  // Buttons
+  const btns = document.querySelectorAll(".opt-btn");
+  btns.forEach((btn, i) => {
+    btn.textContent = options[i].name;
+    btn.className = "opt-btn";
+    btn.disabled = false;
+    btn.onclick = () => handleAnswer(i);
+  });
+
+  // Map
+  placeMarkers(person);
+  lockMap();
+
+  // Panels
+  document.getElementById("question-panel").classList.remove("hidden");
+  document.getElementById("fact-card").classList.add("hidden");
+}
+
+function handleAnswer(idx) {
+  if (answered) return;
+  answered = true;
+
+  const person = questions[current];
+  const chosen = options[idx];
+  const correct = chosen.name === person.name;
+  if (correct) score++;
+  history.push({ person, chosen, correct });
+
+  // Colour buttons
+  const btns = document.querySelectorAll(".opt-btn");
+  btns.forEach((btn, i) => {
+    btn.disabled = true;
+    if (options[i].name === person.name) btn.classList.add("correct");
+    else if (i === idx && !correct)      btn.classList.add("wrong");
+  });
+
+  // Show fact card
+  const rl = document.getElementById("result-line");
+  rl.textContent = correct ? "✓ Correct!" : `✗ It was ${person.name}`;
+  rl.className = correct ? "ok" : "bad";
+  rl.classList.remove("hidden");
+
+  document.getElementById("fact-name").textContent = person.name;
+
+  const cs = CAT[person.cat];
+  document.getElementById("fact-dates").innerHTML =
+    `<span class="cat-badge" style="color:${cs.color};border-color:${cs.color};background:${cs.bg}">${cs.icon} ${person.cat}</span>&nbsp; ` +
+    `Born: ${person.born.city} (${formatYear(person.born.yr)}) &nbsp;·&nbsp; ` +
+    `Died: ${person.died.city} (${formatYear(person.died.yr)})`;
+
+  document.getElementById("fact-text").textContent = person.fact;
+
+  const isLast = current === ROUND_SIZE - 1;
+  document.getElementById("next-btn").textContent = isLast ? "See Results →" : "Next →";
+
+  document.getElementById("question-panel").classList.add("hidden");
+  document.getElementById("fact-card").classList.remove("hidden");
+
+  unlockMap();
+}
+
+function nextQuestion() {
+  current++;
+  if (current >= ROUND_SIZE) {
+    showResults();
+  } else {
+    showQuestion();
+  }
+}
+
+function showResults() {
+  document.getElementById("progress-bar").style.width = "100%";
+
+  const pct = score / ROUND_SIZE;
+  const msgs = [
+    [1.00, "Perfect! You're a true scholar of history! 🏆"],
+    [0.85, "Excellent! Impressive historical knowledge!"],
+    [0.70, "Well done! You know your famous figures."],
+    [0.50, "Not bad! Keep exploring history."],
+    [0.00, "Keep learning — the world has so much to discover!"],
+  ];
+  const msg = msgs.find(([t]) => pct >= t)[1];
+
+  document.getElementById("final-score").textContent = `${score} / ${ROUND_SIZE}`;
+  document.getElementById("score-msg").textContent = msg;
+
+  const list = document.getElementById("results-list");
+  list.innerHTML = "";
+  history.forEach(({ person, chosen, correct }) => {
+    const cs = CAT[person.cat];
+    const item = document.createElement("div");
+    item.className = "res-item";
+    item.innerHTML = `
+      <div class="res-icon">${correct ? "✅" : "❌"}</div>
+      <div>
+        <div class="res-name">${person.name}</div>
+        <div class="res-cat" style="color:${cs.color}">${cs.icon} ${person.cat}
+          ${!correct ? ` &nbsp;·&nbsp; <span style="color:var(--muted)">You said: ${chosen.name}</span>` : ""}
+        </div>
+      </div>`;
+    list.appendChild(item);
+  });
+
+  show("results-screen");
+}
+
+// ─────────────────────────────────────────────
+//  UI HELPERS
+// ─────────────────────────────────────────────
+function show(id) {
+  ["start-screen", "quiz-screen", "results-screen"].forEach(s => {
+    document.getElementById(s).classList.toggle("hidden", s !== id);
+  });
+}
+
+// ─────────────────────────────────────────────
+//  CATEGORY GRID ON START SCREEN
+// ─────────────────────────────────────────────
+(function buildCatGrid() {
+  const el = document.getElementById("cat-grid");
+  // Count people per category from the actual data
+  const counts = {};
+  PEOPLE.forEach(p => { counts[p.cat] = (counts[p.cat] || 0) + 1; });
+  Object.entries(CAT).forEach(([name, s]) => {
+    const card = document.createElement("div");
+    card.className = "cat-card";
+    card.style.borderTopColor = s.color;
+    card.innerHTML =
+      `<div class="cat-card-icon">${s.icon}</div>` +
+      `<div class="cat-card-name">${name}</div>` +
+      `<div class="cat-card-count">${counts[name] || 0} people</div>`;
+    el.appendChild(card);
+  });
+})();
+
+// ─────────────────────────────────────────────
+//  EVENT LISTENERS
+// ─────────────────────────────────────────────
+document.getElementById("start-btn").addEventListener("click", startQuiz);
+document.getElementById("next-btn").addEventListener("click", nextQuestion);
+document.getElementById("restart-btn").addEventListener("click", () => {
+  show("start-screen");
+});
+</script>
+</body>
+</html>
