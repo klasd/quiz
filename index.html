@@ -1594,18 +1594,23 @@ function placeMarkers(person) {
     bMarker = L.marker([b.lat, b.lng], { icon: makeIcon("birth") }).addTo(map);
     dMarker = L.marker([d.lat, d.lng], { icon: makeIcon("death") }).addTo(map);
 
-    // Point each tooltip away from the other marker so they never overlap.
-    // Prefer the vertical (lat) axis; fall back to horizontal when markers
-    // are nearly on the same latitude line.
-    const latDiff = b.lat - d.lat;
-    const lngDiff = b.lng - d.lng;
+    // Point each tooltip in the direction that leads away from the other
+    // marker so they open away from each other and never overlap.
+    // Compare physical separation on each axis: scale lng degrees by
+    // cos(lat) so that e.g. 10° lng near the poles isn't treated the
+    // same as 10° lng at the equator.
+    const latDiff = b.lat - d.lat;   // +ve → birth is north of death
+    const lngDiff = b.lng - d.lng;   // +ve → birth is east of death
+    const lngScale = Math.cos(((b.lat + d.lat) / 2) * Math.PI / 180);
     let bDir, dDir;
-    if (Math.abs(latDiff) >= 2) {
+    if (Math.abs(latDiff) >= Math.abs(lngDiff) * lngScale) {
+      // Vertical separation dominates → one tooltip opens upward, the other downward.
       bDir = latDiff > 0 ? "top" : "bottom";
       dDir = latDiff > 0 ? "bottom" : "top";
     } else {
-      bDir = lngDiff < 0 ? "right" : "left";
-      dDir = lngDiff < 0 ? "left" : "right";
+      // Horizontal separation dominates → each tooltip opens away from the other.
+      bDir = lngDiff > 0 ? "right" : "left";
+      dDir = lngDiff > 0 ? "left" : "right";
     }
 
     bMarker.bindTooltip(`<b>Birthplace</b><br>${b.city}<br><i>${formatYear(b.yr)}</i>`, { permanent: true, direction: bDir });
